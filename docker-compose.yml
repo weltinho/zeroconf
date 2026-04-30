@@ -8,15 +8,14 @@ services:
     # Mesmas credenciais do backend: o Compose expande ${...} a partir do .env na raiz.
     command:
       - -conf=/bitcoin/bitcoin.conf
-      - -datadir=/bitcoin/data
       - -printtoconsole=1
       - -rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}
       - -rpcpassword=${BITCOIN_RPC_PASSWORD:-bitcoinrpcdevpassword}
     volumes:
       # Configuração do bitcoind vinda do repo (somente leitura no container).
       - ./infra/bitcoin/bitcoin.conf:/bitcoin/bitcoin.conf:ro
-      # Volume nomeado para persistir a blockchain/dados entre reinícios.
-      - bitcoin-data:/bitcoin/data
+      # Volume nomeado para persistir blockchain/chainstate no datadir default da imagem.
+      - bitcoin-data:/home/bitcoin/.bitcoin
     ports:
       # P2P mainnet (peer externo opcional).
       - "8333:8333"
