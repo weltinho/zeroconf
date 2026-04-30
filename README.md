@@ -1,8 +1,8 @@
 # bitcoind-realtime-lab
 
-Playground para **JSON-RPC** e **eventos ZMQ** (`hashblock`, `hashtx`) de um nó Bitcoin Core, com stack pronta em Docker.
+Playground para **JSON-RPC** e **eventos ZMQ** (`hashblock`, `hashtx`, `rawblock`, `rawtx`, `sequence`) de um nó Bitcoin Core, com stack pronta em Docker.
 
-- **`bitcoind`** em regtest, imagem [`bitcoin/bitcoin:31.0`](https://hub.docker.com/r/bitcoin/bitcoin) (multi-arquitetura).
+- **`bitcoind`** em **mainnet** com **prune** (~15 GiB de blocos no `bitcoin.conf`), imagem [`bitcoin/bitcoin:31.0`](https://hub.docker.com/r/bitcoin/bitcoin) (multi-arquitetura).
 - **Backend** Python (FastAPI): repasse de RPC para o nó e relay WebSocket dos eventos ZMQ.
 - **Frontend** React + Vite: laboratório de chamadas RPC (GET/POST + params) e painel ao vivo do stream ZMQ.
 - **Caddy**: HTTPS local (`tls internal`) e reverse proxy para `/api`, `/ws` e o app.
@@ -10,7 +10,7 @@ Playground para **JSON-RPC** e **eventos ZMQ** (`hashblock`, `hashtx`) de um nó
 ## Layout
 
 - `docker-compose.yml`: bitcoind, backend, frontend, Caddy
-- `infra/bitcoin/bitcoin.conf`: regtest, RPC, ZMQ (rede Docker)
+- `infra/bitcoin/bitcoin.conf`: mainnet prune, RPC, ZMQ (rede Docker)
 - `infra/caddy/Caddyfile`: gateway HTTPS e roteamento
 - `backend/`: API
 - `frontend/`: UI didática
@@ -59,6 +59,7 @@ docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 
 ## Notas
 
-- Rede **regtest** para experimentação isolada.
-- `txindex=1` no nó para consultas mais amplas.
-- RPC e ZMQ do `bitcoind` ficam na **rede Docker**; o host expõe principalmente **80/443** (Caddy) e o que você mapear no compose (ex.: P2P regtest).
+- **Mainnet**: na primeira subida o nó faz **IBD** (download grande; prune só limita o disco final, não o tráfego inicial). **Sem `txindex`** (incompatível com prune): `getrawtransaction` é limitado para tx muito antigas.
+- **Portas default mainnet:** RPC **8332** (só rede Docker), P2P **8333** (`8333:8333` no host). ZMQ em **28332** (`BITCOIN_ZMQ_PORT` no backend).
+- Ao mudar de **rede** (main/signet/etc.), use **volume novo** para `bitcoin-data` ou apague o antigo — dados de chain são incompatíveis.
+- RPC e ZMQ do `bitcoind` ficam na **rede Docker**; o host expõe **80/443** (Caddy) e **8333** (P2P) se precisar de peer externo.

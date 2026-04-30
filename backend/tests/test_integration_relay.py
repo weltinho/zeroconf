@@ -10,7 +10,7 @@ import websockets
 BACKEND_BASE_URL = os.getenv("TEST_BACKEND_BASE_URL", "http://127.0.0.1:8000")
 BACKEND_WS_URL = os.getenv("TEST_BACKEND_WS_URL", "ws://127.0.0.1:8000/ws/events")
 BITCOIND_HOST = os.getenv("BITCOIN_HOST", "bitcoind")
-BITCOIND_PORT = os.getenv("BITCOIN_RPC_PORT", "18443")
+BITCOIND_PORT = os.getenv("BITCOIN_RPC_PORT", "8332")
 BITCOIND_RPC_URL = f"http://{BITCOIND_HOST}:{BITCOIND_PORT}"
 BITCOIND_RPC_USER = os.getenv("BITCOIN_RPC_USER", "bitcoinrpc")
 BITCOIND_RPC_PASSWORD = os.getenv("BITCOIN_RPC_PASSWORD", "bitcoinrpcdevpassword")
@@ -44,25 +44,44 @@ async def _bitcoind_rpc(
 @pytest.mark.asyncio
 async def test_rpc_passthrough_matches_direct_bitcoind_result() -> None:
     # Valida fidelidade do RPC: backend deve repassar o mesmo resultado do bitcoind.
+    # Em signet pública o tip pode avançar entre pedidos; pedimos em paralelo e repetimos se divergir.
     async with httpx.AsyncClient(timeout=15.0) as rpc_client:
-        backend_response = await rpc_client.get(
-            f"{BACKEND_BASE_URL}/rpc/getblockchaininfo"
-        )
-        backend_response.raise_for_status()
-        backend_result = backend_response.json()["result"]
-        print("\n[RPC] backend /rpc/getblockchaininfo result:")
-        print(json.dumps(backend_result, indent=2, sort_keys=True))
+        last_backend: object | None = None
+        last_direct: object | None = None
+        for attempt in range(25):
+            backend_response, direct_result = await asyncio.gather(
+                rpc_client.get(f"{BACKEND_BASE_URL}/rpc/getblockchaininfo"),
+                _bitcoind_rpc(rpc_client, "getblockchaininfo"),
+            )
+            backend_response.raise_for_status()
+            backend_result = backend_response.json()["result"]
+            last_backend = backend_result
+            last_direct = direct_result
 
-        direct_result = await _bitcoind_rpc(rpc_client, "getblockchaininfo")
-        print("[RPC] direct bitcoind getblockchaininfo result:")
-        print(json.dumps(direct_result, indent=2, sort_keys=True))
+            if backend_result == direct_result:
+                return
 
-        assert backend_result == direct_result
+            if attempt == 0:
+                print("\n[RPC] mismatch (live chain?), retrying…")
+                print("[RPC] backend:", json.dumps(backend_result, indent=2, sort_keys=True))
+                print("[RPC] direct:", json.dumps(direct_result, indent=2, sort_keys=True))
+
+            await asyncio.sleep(0.1)
+
+        print("\n[RPC] final backend:", json.dumps(last_backend, indent=2, sort_keys=True))
+        print("[RPC] final direct:", json.dumps(last_direct, indent=2, sort_keys=True))
+        assert last_backend == last_direct
 
 
 @pytest.mark.asyncio
 async def test_zmq_websocket_relay_matches_bitcoind_hash_notifications() -> None:
     async with httpx.AsyncClient(timeout=15.0) as rpc_client:
+        chain_info = await _bitcoind_rpc(rpc_client, "getblockchaininfo")
+        if chain_info.get("chain") == "main":
+            pytest.skip(
+                "generatetoaddress não está disponível na mainnet; use signet ou regtest."
+            )
+
         # Prepara wallet para minerar bloco via RPC.
         loaded_wallets = await _bitcoind_rpc(rpc_client, "listwallets")
         if TEST_WALLET_NAME not in loaded_wallets:
@@ -86,6 +105,12 @@ async def test_zmq_websocket_relay_matches_bitcoind_hash_notifications() -> None
                 [1, mining_address],
                 wallet=TEST_WALLET_NAME,
             )
+            if not generated_hashes:
+                pytest.skip(
+                    "generatetoaddress returned no block hashes: on public signet you "
+                    "cannot mine from a random wallet (needs signet miner keys); use "
+                    "regtest or a custom signet to exercise this path."
+                )
             expected_block_hash = generated_hashes[0]
             print(f"\n[ZMQ] mined block hash: {expected_block_hash}")
 

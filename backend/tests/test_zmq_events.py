@@ -27,6 +27,27 @@ def test_to_event_decodes_topic_payload_and_sequence() -> None:
     assert event["sequence"] == 7
 
 
+def test_to_event_multipart_with_middle_hex_when_trailing_sequence() -> None:
+    topic = b"custom"
+    a = b"aa"
+    b_ = b"bb"
+    seq = (99).to_bytes(4, byteorder="little")
+    event = ZmqEventRelay._to_event([topic, a, b_, seq])
+    assert event["topic"] == "custom"
+    assert event["payload_hex"] == a.hex()
+    assert event["sequence"] == 99
+    assert event["middle_hex"] == [b_.hex()]
+
+
+def test_to_event_rest_hex_when_trailing_not_four_bytes() -> None:
+    topic = b"x"
+    event = ZmqEventRelay._to_event([topic, b"ab", b"cd", b"ef"])
+    assert event["topic"] == "x"
+    assert event["payload_hex"] == "6162"
+    assert event["sequence"] is None
+    assert event["rest_hex"] == [b"cd".hex(), b"ef".hex()]
+
+
 @pytest.mark.asyncio
 async def test_broadcast_sends_to_all_connected_clients() -> None:
     # Garante fan-out: um evento recebido deve ser enviado para todos clientes ativos.

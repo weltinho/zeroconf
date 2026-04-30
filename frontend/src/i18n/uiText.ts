@@ -17,6 +17,10 @@ export type UiText = {
   walletPlaceholder: string;
   noRpcResponse: string;
   zmqTitle: string;
+  zmqTopicFilterLabel: string;
+  zmqTopicAll: string;
+  zmqEventsVisible: string;
+  zmqNoEventsForFilter: string;
   stopStream: string;
   startStream: string;
   clearEvents: string;
@@ -51,6 +55,10 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     walletPlaceholder: "Wallet context (optional), e.g. student-wallet",
     noRpcResponse: "No RPC response yet.",
     zmqTitle: "ZMQ Event Stream",
+    zmqTopicFilterLabel: "Topic",
+    zmqTopicAll: "All topics",
+    zmqEventsVisible: "{visible} of {total} events",
+    zmqNoEventsForFilter: "No events for this topic in the buffer yet.",
     stopStream: "Stop stream",
     startStream: "Start stream",
     clearEvents: "Clear events",
@@ -84,6 +92,10 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     walletPlaceholder: "Contexto de wallet (opcional), ex.: student-wallet",
     noRpcResponse: "Sem resposta RPC ainda.",
     zmqTitle: "Stream de Eventos ZMQ",
+    zmqTopicFilterLabel: "Tópico",
+    zmqTopicAll: "Todos os tópicos",
+    zmqEventsVisible: "{visible} de {total} eventos",
+    zmqNoEventsForFilter: "Ainda não há eventos deste tópico no buffer.",
     stopStream: "Parar stream",
     startStream: "Iniciar stream",
     clearEvents: "Limpar eventos",

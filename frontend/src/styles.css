@@ -179,6 +179,19 @@ body {
   align-items: center;
 }
 
+.zmq-filter-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.zmq-topic-filter {
+  min-width: 9rem;
+  flex: 0 0 auto;
+}
+
 input,
 select,
 textarea,

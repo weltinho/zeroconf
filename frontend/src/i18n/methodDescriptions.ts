@@ -9,7 +9,8 @@ export const METHOD_DESCRIPTION_MAP: Record<string, string> = {
   getzmqnotifications: "Returns active ZMQ publisher notifications configured on node.",
   getmempoolinfo: "Returns summary information about the mempool.",
   getrawmempool: "Returns txids (or verbose entries) currently in mempool.",
-  generatetoaddress: "Mines blocks immediately to a destination address (regtest mode).",
+  generatetoaddress:
+    "Mines blocks immediately to a destination address (regtest/signet; em signet pública depende de permissões e mineradores da rede).",
   createwallet: "Creates and loads a new wallet.",
   getnewaddress: "Returns a new wallet receiving address.",
   sendtoaddress: "Sends BTC to a destination address from wallet funds.",

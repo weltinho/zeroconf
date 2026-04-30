@@ -21,7 +21,7 @@ class RpcCallRequest(BaseModel):
 @app.get("/health")
 async def health() -> dict[str, str]:
     # Endpoint simples para verificar se a API subiu.
-    # "network" ajuda a confirmar se estamos em regtest/testnet/mainnet.
+    # "network" ajuda a confirmar se estamos em signet/regtest/testnet/mainnet.
     return {"status": "ok", "network": settings.bitcoin_network}
 
 

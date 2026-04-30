@@ -2,6 +2,7 @@ import httpx
 import pytest
 
 from app.bitcoin_rpc import BitcoinRpcClient, BitcoinRpcError
+from app.settings import settings
 
 
 @pytest.mark.asyncio
@@ -11,7 +12,7 @@ async def test_call_raises_jsonrpc_error_even_on_http_500(
     client = BitcoinRpcClient()
 
     async def fake_post(*args, **kwargs) -> httpx.Response:
-        request = httpx.Request("POST", "http://bitcoind:18443")
+        request = httpx.Request("POST", settings.rpc_url)
         return httpx.Response(
             500,
             json={
@@ -42,7 +43,7 @@ async def test_call_raises_http_error_when_no_jsonrpc_error(
     client = BitcoinRpcClient()
 
     async def fake_post(*args, **kwargs) -> httpx.Response:
-        request = httpx.Request("POST", "http://bitcoind:18443")
+        request = httpx.Request("POST", settings.rpc_url)
         return httpx.Response(502, text="bad gateway", request=request)
 
     monkeypatch.setattr(client._client, "post", fake_post)

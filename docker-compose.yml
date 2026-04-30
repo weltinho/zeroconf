@@ -1,5 +1,5 @@
 services:
-  # Nó Bitcoin Core em regtest para uso local.
+  # Nó Bitcoin Core em mainnet (prune no bitcoin.conf).
   bitcoind:
     image: bitcoin/bitcoin:31.0  #Versão fixa, comportamento mais previsivel
     container_name: bitcoin-coder-bitcoind
@@ -18,15 +18,13 @@ services:
       # Volume nomeado para persistir a blockchain/dados entre reinícios.
       - bitcoin-data:/bitcoin/data
     ports:
-      # P2P em regtest (manter habilitado ajuda cenários de sincronização realistas).
-      - "18444:18444"
+      # P2P mainnet (peer externo opcional).
+      - "8333:8333"
     expose:
-      # RPC disponível apenas para containers na rede Docker deste compose.
-      - "18443"
-      # ZMQ para blocos disponível apenas na rede Docker privada.
+      # RPC apenas na rede Docker deste compose.
+      - "8332"
+      # ZMQ (todos os zmqpub* no mesmo bind) apenas na rede Docker privada.
       - "28332"
-      # ZMQ para transações disponível apenas na rede Docker privada.
-      - "28333"
 
   # API FastAPI que conversa com o bitcoind via RPC e ZMQ.
   backend:
@@ -65,8 +63,9 @@ services:
     image: caddy:2.8
     container_name: bitcoin-coder-caddy
     restart: unless-stopped
-    # Lista de endereços do site (Caddyfile {$CADDY_SITE_ADDRESSES}). Inclua o IPv4
-    # público da EC2 para https://SEU_IP (ex.: após vírgula: ", 3.14.159.26").
+    # Só usado por infra/caddy/Caddyfile (tls internal + {$CADDY_SITE_ADDRESSES}).
+    # Se montares Caddyfile.prod (Let's Encrypt), este bloco é ignorado — podes apagar
+    # estas linhas no teu compose para evitar confusão.
     environment:
       CADDY_SITE_ADDRESSES: '${CADDY_SITE_ADDRESSES:-localhost, 127.0.0.1, [::1]}'
       CADDY_DEFAULT_SNI: '${CADDY_DEFAULT_SNI:-localhost}'

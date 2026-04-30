@@ -10,10 +10,23 @@ type RpcResult = {
   result: unknown;
 };
 
+/** Tópicos ZMQ que o backend subscreve por default (alinhar com `bitcoin.conf` / settings). */
+const ZMQ_RELAY_TOPIC_OPTIONS = [
+  "hashblock",
+  "hashtx",
+  "rawblock",
+  "rawtx",
+  "sequence",
+] as const;
+
+type ZmqTopicFilterValue = "all" | (typeof ZMQ_RELAY_TOPIC_OPTIONS)[number];
+
 type RelayEvent = {
   topic: string;
   payload_hex: string | null;
   sequence: number | null;
+  middle_hex?: string[];
+  rest_hex?: string[];
 };
 
 type RpcMethodSpec = {
@@ -131,9 +144,9 @@ const RPC_CATALOG: RpcCategory[] = [
   {
     label: "Network RPCs",
     methods: [
-      m("addnode", "required", ["127.0.0.1:18444", "add"]),
+      m("addnode", "required", ["127.0.0.1:8333", "add"]),
       m("clearbanned", "none"),
-      m("disconnectnode", "required", ["127.0.0.1:18444"]),
+      m("disconnectnode", "required", ["127.0.0.1:8333"]),
       m("getaddednodeinfo", "none"),
       m("getconnectioncount", "none"),
       m("getnettotals", "none"),
@@ -211,6 +224,7 @@ export default function App() {
     "disconnected"
   );
   const [events, setEvents] = useState<RelayEvent[]>([]);
+  const [zmqTopicFilter, setZmqTopicFilter] = useState<ZmqTopicFilterValue>("all");
   const [wsError, setWsError] = useState("");
   const browserLocale = useMemo(() => navigator.language || "unknown", []);
   const t = useMemo(() => getUiText(browserLocale), [browserLocale]);
@@ -221,6 +235,13 @@ export default function App() {
     const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
     return `${proto}//${window.location.host}/ws/events`;
   }, []);
+
+  const filteredZmqEvents = useMemo(() => {
+    if (zmqTopicFilter === "all") {
+      return events;
+    }
+    return events.filter((e) => e.topic === zmqTopicFilter);
+  }, [events, zmqTopicFilter]);
 
   const methodSpec = useMemo(
     () => METHOD_INDEX.get(method) ?? { name: method, params: "optional" as const, exampleParams: [] },
@@ -518,11 +539,37 @@ export default function App() {
           <button onClick={() => setEvents([])} type="button">
             {t.clearEvents}
           </button>
+          <label className="zmq-filter-label">
+            <span>{t.zmqTopicFilterLabel}</span>
+            <select
+              className="zmq-topic-filter"
+              value={zmqTopicFilter}
+              onChange={(e) => setZmqTopicFilter(e.target.value as ZmqTopicFilterValue)}
+            >
+              <option value="all">{t.zmqTopicAll}</option>
+              {ZMQ_RELAY_TOPIC_OPTIONS.map((topic) => (
+                <option key={topic} value={topic}>
+                  {topic}
+                </option>
+              ))}
+            </select>
+          </label>
           <span className={`status ${wsStatus}`}>{wsStatus}</span>
         </div>
         {wsError ? <p className="error">{wsError}</p> : null}
+        {events.length ? (
+          <p className="panel-hint">
+            {t.zmqEventsVisible
+              .replace("{visible}", String(filteredZmqEvents.length))
+              .replace("{total}", String(events.length))}
+          </p>
+        ) : null}
         <pre className="panel-pre zmq-events-pre">
-          {events.length ? JSON.stringify(events, null, 2) : t.noEvents}
+          {!events.length
+            ? t.noEvents
+            : filteredZmqEvents.length
+              ? JSON.stringify(filteredZmqEvents, null, 2)
+              : t.zmqNoEventsForFilter}
         </pre>
       </section>
       </div>

@@ -23,7 +23,7 @@ def client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[TestClient, None]:
 
 def test_health_returns_status_and_network(client: TestClient) -> None:
     # Verifica contrato básico do health check da API.
-    # Não fixa rede específica (regtest/mainnet/testnet), apenas valida consistência.
+    # Não fixa rede específica (signet/regtest/mainnet/testnet), apenas valida consistência.
     response = client.get("/health")
 
     assert response.status_code == 200

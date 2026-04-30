@@ -27,12 +27,11 @@ class ZmqEventRelay:
         if self._task or not settings.zmq_enabled:
             return
 
-        # Cria socket subscriber (SUB) e conecta nos endpoints de blocos e tx.
+        # Cria socket subscriber (SUB) e conecta no endpoint PUB do bitcoind.
         socket = self._context.socket(zmq.SUB)
-        socket.connect(settings.bitcoin_zmq_block)
-        socket.connect(settings.bitcoin_zmq_tx)
-        # Assina cada tópico configurado (ex: hashblock, hashtx).
-        for topic in settings.bitcoin_zmq_topics:
+        socket.connect(settings.bitcoin_zmq_endpoint)
+        # Assina cada tópico configurado (hashblock, hashtx, raw*, sequence, ...).
+        for topic in settings.bitcoin_zmq_topic_list:
             socket.setsockopt(zmq.SUBSCRIBE, topic.encode("ascii"))
 
         self._socket = socket
@@ -88,15 +87,36 @@ class ZmqEventRelay:
 
     @staticmethod
     def _to_event(frames: list[bytes]) -> dict[str, Any]:
-        # Frame 0: tópico (ascii), frame 1: payload binário, frame 2: sequência.
+        # Formato usual do Core: tópico (ascii), corpo, contador 4-byte LE (ver doc/zmq.md).
         topic = frames[0].decode("ascii")
-        # Serializa payload para hex por ser amigável para JSON.
-        payload = frames[1].hex() if len(frames) > 1 else None
-        # Sequência costuma vir em little-endian no publisher do bitcoind.
-        sequence = (
-            int.from_bytes(frames[2], byteorder="little") if len(frames) > 2 else None
-        )
-        return {"topic": topic, "payload_hex": payload, "sequence": sequence}
+        if len(frames) < 2:
+            return {"topic": topic, "payload_hex": None, "sequence": None}
+
+        bodies = frames[1:]
+        payload_hex = bodies[0].hex()
+        sequence: int | None = None
+        middle_hex: list[str] | None = None
+        rest_hex: list[str] | None = None
+
+        if len(bodies) >= 2:
+            trailing = bodies[-1]
+            if len(trailing) == 4:
+                sequence = int.from_bytes(trailing, byteorder="little")
+                if len(bodies) > 2:
+                    middle_hex = [b.hex() for b in bodies[1:-1]]
+            else:
+                rest_hex = [b.hex() for b in bodies[1:]]
+
+        event: dict[str, Any] = {
+            "topic": topic,
+            "payload_hex": payload_hex,
+            "sequence": sequence,
+        }
+        if middle_hex:
+            event["middle_hex"] = middle_hex
+        if rest_hex:
+            event["rest_hex"] = rest_hex
+        return event
 
     async def _broadcast(self, event: dict[str, Any]) -> None:
         # Snapshot para não segurar lock durante I/O de rede.
