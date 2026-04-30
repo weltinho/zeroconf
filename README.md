@@ -4,16 +4,41 @@ Playground para **JSON-RPC** e **eventos ZMQ** (`hashblock`, `hashtx`, `rawblock
 
 - **`bitcoind`** em **mainnet** com **prune** (~15 GiB de blocos no `bitcoin.conf`), imagem [`bitcoin/bitcoin:31.0`](https://hub.docker.com/r/bitcoin/bitcoin) (multi-arquitetura).
 - **Backend** Python (FastAPI): repasse de RPC para o nó e relay WebSocket dos eventos ZMQ.
-- **Frontend** React + Vite: laboratório de chamadas RPC (GET/POST + params) e painel ao vivo do stream ZMQ.
-- **Caddy**: HTTPS local (`tls internal`) e reverse proxy para `/api`, `/ws` e o app.
+- **Frontend** React + Vite: interface didática para testar RPC e visualizar eventos.
+- **Caddy**: HTTPS e proxy reverso entre navegador e serviços.
 
 ## Layout
 
 - `docker-compose.yml`: bitcoind, backend, frontend, Caddy
 - `infra/bitcoin/bitcoin.conf`: mainnet prune, RPC, ZMQ (rede Docker)
-- `infra/caddy/Caddyfile`: gateway HTTPS e roteamento
+- `infra/caddy/Caddyfile`: proxy HTTPS
 - `backend/`: API
-- `frontend/`: UI didática
+- `frontend/`: UI de apoio
+
+## Bitcoind (mainnet leve)
+
+Este lab foi ajustado para **rodar mainnet de forma mais leve** em VPS pequena (ex.: AWS free tier), sem abrir mão de um nó real para os **blocos mais recentes** e para o fluxo didático de RPC + ZMQ.
+
+### Objetivo
+
+- Mostrar um setup de Bitcoin Core que cabe em ambiente barato/grátis.
+- Entregar uma experiência "mainnet de respeito" para monitorar tip, mempool e eventos em tempo real. E demais coisas que podem evoluir disto
+- Evitar o custo de disco de um nó archival completo.
+
+### Configuração usada no `bitcoin.conf`
+
+- `prune=15000`: mantém aproximadamente 15 GiB de blocos no disco.
+- `dbcache=400`: reduz pressão de memória em instâncias pequenas.
+- `par=1`: limita paralelismo para suavizar pico de CPU.
+- `server=1` e `listen=1`: RPC ativo e P2P habilitado.
+- ZMQ em `28332` para eventos (`hashblock`, `hashtx`, `rawblock`, `rawtx`, `sequence`).
+
+### Trade-offs (importante para iniciantes)
+
+- O nó continua a fazer IBD da mainnet inteira; o prune reduz **armazenamento final**, não o download inicial.
+- `txindex` não pode ser usado com prune; consultas históricas muito antigas ficam limitadas.
+- Em AWS muito pequena (`t3/t4g micro`), sincronização pode ser lenta e sensível a CPU/RAM.
+- Mesmo com prune, reserve margem de disco para SO, Docker, chainstate e logs.
 
 ## Quick start
 
