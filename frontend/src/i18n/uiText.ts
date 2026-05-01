@@ -1,4 +1,11 @@
 export type UiText = {
+  backToHome: string;
+  homeTitle: string;
+  homeSubtitle: string;
+  cardRpcTitle: string;
+  cardRpcDesc: string;
+  cardSoonTitle: string;
+  cardSoonDesc: string;
   title: string;
   subtitle: string;
   logoAriaLabel: string;
@@ -37,6 +44,14 @@ export type UiText = {
 
 export const UI_TEXT: Record<"en" | "pt", UiText> = {
   en: {
+    backToHome: "Home",
+    homeTitle: "Bitcoin Coder Lab",
+    homeSubtitle:
+      "Pick a workspace. The RPC playground and ZMQ stream live on the lab page.",
+    cardRpcTitle: "RPC + ZMQ lab",
+    cardRpcDesc: "JSON-RPC passthrough and real-time relay events from your node.",
+    cardSoonTitle: "More soon",
+    cardSoonDesc: "Additional guides and tools will appear here.",
     title: "Bitcoin Coder Lab UI",
     subtitle: "Test RPC passthrough and inspect real-time ZMQ relay events.",
     logoAriaLabel: "Bitcoin Real Time — Requests and Events",
@@ -74,6 +89,14 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
       "RPC method in this category. See the official reference for complete semantics.",
   },
   pt: {
+    backToHome: "Início",
+    homeTitle: "Bitcoin Coder Lab",
+    homeSubtitle:
+      "Escolha um espaço de trabalho. O laboratório RPC e o stream ZMQ ficam na página do lab.",
+    cardRpcTitle: "Laboratório RPC + ZMQ",
+    cardRpcDesc: "Passthrough JSON-RPC e eventos do relay em tempo real do seu nó.",
+    cardSoonTitle: "Em breve",
+    cardSoonDesc: "Outros guias e ferramentas aparecerão aqui.",
     title: "Bitcoin Coder Lab UI",
     subtitle: "Teste o passthrough RPC e inspecione eventos ZMQ em tempo real.",
     logoAriaLabel: "Bitcoin em tempo real — requisições e eventos",

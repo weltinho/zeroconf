@@ -25,6 +25,97 @@ body {
   min-height: 100vh;
 }
 
+.layout-home {
+  gap: 0.85rem;
+}
+
+.page-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.82rem;
+  flex-shrink: 0;
+}
+
+.page-nav-link {
+  color: #1b4c85;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.page-nav-link:hover {
+  text-decoration: underline;
+}
+
+.page-nav-sep {
+  color: #94a3b8;
+}
+
+.page-nav-current {
+  color: #64748b;
+}
+
+.home-cards {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: 1fr;
+  flex: 1;
+  align-content: start;
+}
+
+@media (min-width: 720px) {
+  .home-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.home-card {
+  display: block;
+  position: relative;
+  padding: 1rem 2.25rem 1rem 1rem;
+  background: #ffffff;
+  border: 1px solid #d8e0eb;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgba(15, 37, 64, 0.06);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.home-card:hover:not(.home-card-disabled) {
+  border-color: #f7931a;
+  box-shadow: 0 6px 18px rgba(15, 37, 64, 0.1);
+}
+
+.home-card h2 {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f2d58;
+}
+
+.home-card p {
+  margin: 0;
+  font-size: 0.88rem;
+  color: #475569;
+  line-height: 1.45;
+}
+
+.home-card-cta {
+  position: absolute;
+  right: 0.85rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 1.25rem;
+  color: #f7931a;
+}
+
+.home-card-disabled {
+  cursor: default;
+  opacity: 0.72;
+  background: #f8fafc;
+}
+
 .workspace {
   display: grid;
   grid-template-columns: 1fr;

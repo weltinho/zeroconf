@@ -5,12 +5,17 @@ services:
     container_name: bitcoin-coder-bitcoind
     # Reinicia automaticamente, exceto se você parar manualmente.
     restart: unless-stopped
+    # Dá tempo para flush do LevelDB no shutdown, reduzindo risco de corrupção.
+    stop_grace_period: 2m
     # Mesmas credenciais do backend: o Compose expande ${...} a partir do .env na raiz.
     command:
       - -conf=/bitcoin/bitcoin.conf
       - -printtoconsole=1
       - -rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}
       - -rpcpassword=${BITCOIN_RPC_PASSWORD:-bitcoinrpcdevpassword}
+      # Flags de recuperação opcionais (use 1 temporariamente e volte para 0 após concluir).
+      - -reindex-chainstate=${BITCOIN_REINDEX_CHAINSTATE:-0}
+      - -reindex=${BITCOIN_REINDEX:-0}
     volumes:
       # Configuração do bitcoind vinda do repo (somente leitura no container).
       - ./infra/bitcoin/bitcoin.conf:/bitcoin/bitcoin.conf:ro
