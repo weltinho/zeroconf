@@ -74,9 +74,9 @@ curl http://localhost:8200/rpc/getblockchaininfo
 
 ## HTTPS (local / IP)
 
-O Caddy escuta em **`:80` / `:443`** (qualquer `Host`), para o Docker encaminhar tráfego da EC2 pelo IP público. Usa **`tls internal`**; o aviso do navegador é esperado sem domínio com Let’s Encrypt. Em produção, prefira **domínio + ACME**.
+O Caddy escuta em **`:80` / `:443` dentro do contentor**; no host mapeias **9080/9443** por omissão. Usa **`tls internal`**; o aviso do navegador é esperado sem domínio com Let’s Encrypt. Em produção, prefira **domínio + ACME**.
 
-Para **`https://<IPv4-público>`** (ex. na EC2), o certificado interno tem de incluir esse IP. No `.env`, defina **`CADDY_SITE_ADDRESSES`** com o IP no fim da lista (ver `.env.example`). Depois, na pasta `stack/`: `docker compose up -d --force-recreate caddy`.
+O ficheiro **`.env` na raiz do repo** define **`CADDY_SITE_ADDRESSES`** e **`CADDY_DEFAULT_SNI`** (lista **todas** as formas de acederes: `localhost`, IP público, **domínio DuckDNS**, etc.). Se o domínio **não** estiver nessa lista, o browser tende a mostrar **ERR_SSL_PROTOCOL_ERROR** em `https://teu-dominio:9443` — não é a porta 9443 a falhar, é o **SNI** / certificado. Depois de editar o `.env` na raiz: na pasta `stack/`, `docker compose up -d --force-recreate caddy`.
 
 Muitos clientes **`curl`** (p.ex. LibreSSL no macOS) **não enviam SNI** em URLs só com IPv4; o Caddy pode responder com erro TLS. Defina também **`CADDY_DEFAULT_SNI`** com o **mesmo** IPv4 público (ver `.env.example`).
 

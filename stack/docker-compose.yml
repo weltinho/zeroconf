@@ -55,9 +55,11 @@ services:
     image: caddy:2.8
     container_name: stack-caddy
     restart: unless-stopped
-    environment:
-      CADDY_SITE_ADDRESSES: '${CADDY_SITE_ADDRESSES:-localhost, 127.0.0.1, [::1]}'
-      CADDY_DEFAULT_SNI: '${CADDY_DEFAULT_SNI:-localhost}'
+    # `environment: ${VAR}` só usa `stack/.env` na interpolação — não lia `../.env`.
+    # Ordem: defaults locais, depois `../.env` do repo (domínio DuckDNS, IP público, etc.).
+    env_file:
+      - ./caddy.defaults.env
+      - ../.env
     depends_on:
       - frontend
       - backend
