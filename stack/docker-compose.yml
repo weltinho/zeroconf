@@ -30,8 +30,11 @@ services:
       context: ./backend
     container_name: stack-backend
     restart: unless-stopped
+    # `../.env` = raiz do repo; `stack/.env` opcional sobrescreve (quem mete tudo em stack/).
     env_file:
       - ../.env
+      - path: ./.env
+        required: false
     volumes:
       - ./backend:/app
     ports:
@@ -55,11 +58,12 @@ services:
     image: caddy:2.8
     container_name: stack-caddy
     restart: unless-stopped
-    # `environment: ${VAR}` só usa `stack/.env` na interpolação — não lia `../.env`.
-    # Ordem: defaults locais, depois `../.env` do repo (domínio DuckDNS, IP público, etc.).
+    # Ordem: defaults, raiz do repo, depois `stack/.env` (último ganha se existir).
     env_file:
       - ./caddy.defaults.env
       - ../.env
+      - path: ./.env
+        required: false
     depends_on:
       - frontend
       - backend

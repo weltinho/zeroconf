@@ -80,6 +80,8 @@ O ficheiro **`.env` na raiz do repo** define **`CADDY_SITE_ADDRESSES`** e **`CAD
 
 Muitos clientes **`curl`** (p.ex. LibreSSL no macOS) **não enviam SNI** em URLs só com IPv4; o Caddy pode responder com erro TLS. Defina também **`CADDY_DEFAULT_SNI`** com o **mesmo** IPv4 público (ver `.env.example`).
 
+**`https://novo-dominio` na 443 (sem `:9443`):** o browser usa sempre a **443**; o stack mapeia HTTPS para **9443** no host, por isso outro Caddy (ou o que já tiveres na 443) tem de fazer *reverse proxy* para `https://127.0.0.1:9443` (ou `https://172.17.0.1:9443` a partir de um contentor). Exemplo de bloco e passos: `stack/infra/caddy/Caddyfile.edge.example`. No `.env` da raiz, inclui o **mesmo** hostname em **`CADDY_SITE_ADDRESSES`** e recria o `stack-caddy`.
+
 ## Testes (backend)
 
 Dentro do container (como no dia a dia do projeto):

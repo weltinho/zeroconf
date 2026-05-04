@@ -1,0 +1,38 @@
+# Caddy “à frente” na porta 443 com um domínio novo (ex.: lab.seudominio.duckdns.org).
+# Encaminha para o stack-caddy que já expõe HTTPS no host na porta 9443 (docker-compose).
+#
+# Porque não proxy para 9080?
+# O Caddy interno (stack) tem `:80 { redir https://... }` — apontar o edge para HTTP local
+# devolve 302 e pode causar loop ou URLs erradas. Por isso o upstream aqui é HTTPS :9443.
+#
+# Passos:
+# 1) DNS: registo A do novo domínio → IP público da VPS (igual ao domínio principal).
+# 2) No `.env` NA RAIZ do repo (onde stack-caddy lê), acrescenta o mesmo hostname a:
+#    CADDY_SITE_ADDRESSES=..., lab.seudominio.duckdns.org
+#    CADDY_DEFAULT_SNI=lab.seudominio.duckdns.org   # ou o hostname principal que usas no browser
+#    Depois: cd stack && docker compose up -d --force-recreate caddy
+# 3) Coloca este bloco no Caddy que já ocupa a 443 no servidor (ou monta um novo só para isto).
+# 4) Substitui HOST_CORRECTO abaixo:
+#    - Caddy a correr NO HOST (binário): https://127.0.0.1:9443
+#    - Caddy noutro CONTENTOR Docker no mesmo host: https://172.17.0.1:9443
+#      (ou host.docker.internal — depende do Docker; às vezes é preciso extra_hosts no compose)
+#
+# Certificado no browser:
+# - Se usares `tls you@email.com` (Let's Encrypt) neste bloco, o browser confia no domínio.
+# - Se usares só `tls internal` aqui no edge, ainda terás aviso de certificado (outro “interno”).
+
+lab.seudominio.duckdns.org {
+	# Let's Encrypt (HTTPS público sem aviso no browser). Troca o email.
+	# tls seu-email@exemplo.com
+
+	reverse_proxy https://HOST_CORRECTO:9443 {
+		transport http {
+			tls
+			tls_insecure_skip_verify
+		}
+		header_up Host {http.request.host}
+		header_up X-Forwarded-Proto https
+		header_up X-Forwarded-For {remote_host}
+		header_up X-Real-IP {remote_host}
+	}
+}
