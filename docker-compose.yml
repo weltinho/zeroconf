@@ -1,91 +1,37 @@
+# Apenas Bitcoin Core — mantém blockchain em volume persistente e rede partilhável.
+# Os restantes serviços estão em `stack/docker-compose.yml`.
+#
+# Subir primeiro (ou criar a rede à mão): este compose cria a rede `bitcoin-coder-net`.
 services:
-  # Nó Bitcoin Core em mainnet (prune no bitcoin.conf).
   bitcoind:
     image: bitcoin/bitcoin:31.0  #Versão fixa, comportamento mais previsivel
     container_name: bitcoin-coder-bitcoind
-    # Reinicia automaticamente, exceto se você parar manualmente.
     restart: unless-stopped
-    # Dá tempo para flush do LevelDB no shutdown, reduzindo risco de corrupção.
     stop_grace_period: 2m
-    # Mesmas credenciais do backend: o Compose expande ${...} a partir do .env na raiz.
     command:
       - -conf=/bitcoin/bitcoin.conf
       - -printtoconsole=1
       - -rpcuser=${BITCOIN_RPC_USER:-bitcoinrpc}
       - -rpcpassword=${BITCOIN_RPC_PASSWORD:-bitcoinrpcdevpassword}
-      # Flags de recuperação opcionais (use 1 temporariamente e volte para 0 após concluir).
       - -reindex-chainstate=${BITCOIN_REINDEX_CHAINSTATE:-0}
       - -reindex=${BITCOIN_REINDEX:-0}
     volumes:
-      # Configuração do bitcoind vinda do repo (somente leitura no container).
       - ./infra/bitcoin/bitcoin.conf:/bitcoin/bitcoin.conf:ro
-      # Volume nomeado para persistir blockchain/chainstate no datadir default da imagem.
       - bitcoin-data:/home/bitcoin/.bitcoin
     ports:
-      # P2P mainnet (peer externo opcional).
       - "8333:8333"
     expose:
-      # RPC apenas na rede Docker deste compose.
       - "8332"
-      # ZMQ (todos os zmqpub* no mesmo bind) apenas na rede Docker privada.
       - "28332"
+    networks:
+      bitcoin-coder:
+        aliases:
+          - bitcoind
 
-  # API FastAPI que conversa com o bitcoind via RPC e ZMQ.
-  backend:
-    build:
-      context: ./backend
-    container_name: bitcoin-coder-backend
-    restart: unless-stopped
-    # Carrega variáveis de ambiente da aplicação backend.
-    env_file:
-      - .env
-    # Ordem de startup (não garante readiness do RPC/ZMQ).
-    depends_on:
-      - bitcoind
-    volumes:
-      # Bind mount para desenvolvimento com hot reload do código.
-      - ./backend:/app
-    ports:
-      # API HTTP/WebSocket exposta localmente.
-      - "8000:8000"
-    # Servidor ASGI em modo de desenvolvimento (auto-reload).
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
-  # Frontend didático (RPC playground + stream de eventos ZMQ via WebSocket).
-  frontend:
-    build:
-      context: ./frontend
-    container_name: bitcoin-coder-frontend
-    restart: unless-stopped
-    depends_on:
-      - backend
-    expose:
-      - "5173"
-
-  # Gateway web com HTTPS local e reverse proxy para frontend/backend.
-  caddy:
-    image: caddy:2.8
-    container_name: bitcoin-coder-caddy
-    restart: unless-stopped
-    # Só usado por infra/caddy/Caddyfile (tls internal + {$CADDY_SITE_ADDRESSES}).
-    # Se montares Caddyfile.prod (Let's Encrypt), este bloco é ignorado — podes apagar
-    # estas linhas no teu compose para evitar confusão.
-    environment:
-      CADDY_SITE_ADDRESSES: '${CADDY_SITE_ADDRESSES:-localhost, 127.0.0.1, [::1]}'
-      CADDY_DEFAULT_SNI: '${CADDY_DEFAULT_SNI:-localhost}'
-    depends_on:
-      - frontend
-      - backend
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy-data:/data
-      - caddy-config:/config
+networks:
+  bitcoin-coder:
+    name: bitcoin-coder-net
 
 volumes:
-  # Volume persistente usado pelo serviço bitcoind.
   bitcoin-data:
-  caddy-data:
-  caddy-config:
+    name: bitcoin-coder_bitcoin-data

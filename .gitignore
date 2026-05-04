@@ -16,11 +16,11 @@ htmlcov/
 .mypy_cache/
 
 # Node / frontend
-frontend/node_modules/
-frontend/dist/
+stack/frontend/node_modules/
+stack/frontend/dist/
 *.tsbuildinfo
-frontend/vite.config.js
-frontend/vite.config.d.ts
+stack/frontend/vite.config.js
+stack/frontend/vite.config.d.ts
 
 # IDE / OS
 .idea/

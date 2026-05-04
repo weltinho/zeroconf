@@ -1,0 +1,84 @@
+# Stack da app (MariaDB, API, frontend, Caddy). Liga-se ao bitcoind pela rede externa
+# `bitcoin-coder-net` (criada pelo compose na raiz do repo).
+#
+# Na raiz do repo: `docker compose up -d` (bitcoind), depois aqui: `docker compose up -d --build`
+
+name: stack
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: stack-mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-stack}
+      MARIADB_USER: ${MARIADB_USER:-stack}
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-stackdevpassword}
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-stackrootdevpassword}
+    volumes:
+      - mariadb-data:/var/lib/mysql
+    expose:
+      - "3306"
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+    container_name: stack-backend
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    volumes:
+      - ./backend:/app
+    ports:
+      - "${STACK_BACKEND_HOST_PORT:-8200}:8000"
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - default
+      - bitcoin-coder
+
+  frontend:
+    build:
+      context: ./frontend
+    container_name: stack-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "${STACK_FRONTEND_HOST_PORT:-5177}:5173"
+
+  caddy:
+    image: caddy:2.8
+    container_name: stack-caddy
+    restart: unless-stopped
+    environment:
+      CADDY_SITE_ADDRESSES: '${CADDY_SITE_ADDRESSES:-localhost, 127.0.0.1, [::1]}'
+      CADDY_DEFAULT_SNI: '${CADDY_DEFAULT_SNI:-localhost}'
+    depends_on:
+      - frontend
+      - backend
+    ports:
+      - "${STACK_HTTP_HOST_PORT:-9080}:80"
+      - "${STACK_HTTPS_HOST_PORT:-9443}:443"
+    volumes:
+      - ./infra/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+networks:
+  bitcoin-coder:
+    external: true
+    name: bitcoin-coder-net
+
+volumes:
+  mariadb-data:
+    name: bitcoin-coder_mariadb-data
+  caddy-data:
+    name: bitcoin-coder_caddy-data
+  caddy-config:
+    name: bitcoin-coder_caddy-config

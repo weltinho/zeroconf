@@ -4,12 +4,12 @@
 # 1) Crie um registo DNS tipo A:  your-lab.example.com  ->  IPv4 público da EC2
 # 2) Security group: TCP 80 e 443 abertos para a Internet (o ACME HTTP-01 usa a 80)
 # 3) Substitua YOUR-LAB.EXAMPLE.COM e you@example.com abaixo
-# 4) Copie este ficheiro por cima do Caddyfile em uso, ou monte-o no compose:
+# 4) Copie este ficheiro por cima do Caddyfile em uso, ou monte-o no compose em `stack/`:
 #      volumes:
 #        - ./infra/caddy/Caddyfile.prod:/etc/caddy/Caddyfile:ro
 # 5) Apague os volumes caddy-data e caddy-config uma vez (certificados antigos "internal")
 #    ou o Caddy pode confundir políticas TLS.
-# 6) docker compose up -d --force-recreate caddy
+# 6) A partir da pasta `stack/`: docker compose up -d --force-recreate caddy
 #
 # O Caddy obtém e renova o certificado sozinho (ACME). Não use "tls internal" neste bloco.
 
