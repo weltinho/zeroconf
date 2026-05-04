@@ -63,7 +63,7 @@ docker volume create bitcoin-coder_caddy-data
 docker volume create bitcoin-coder_caddy-config
 ```
 
-4. Suba a **stack da app** (directório `stack/`). Exige o passo 2 — a rede tem de existir.
+4. Suba a **stack da app** (directório `stack/`). A rede `bitcoin-coder-net` é criada aqui se ainda não existir (ou já veio do passo 2 com o bitcoind).
 
 ```bash
 cd stack && docker compose up -d --build
@@ -100,7 +100,7 @@ docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 
 ## Notas
 
-- **Dois composes:** `docker compose down` **só em `stack/`** derruba MariaDB, API, frontend e Caddy; o **bitcoind** na raiz (e o volume `bitcoin-data`) **não** são afectados. Subir a stack outra vez: `cd stack && docker compose up -d --build`. A rede `bitcoin-coder-net` tem de existir (o compose na raiz cria-a ao subir o `bitcoind`).
+- **Dois composes:** `docker compose down` **só em `stack/`** derruba MariaDB, API, frontend e Caddy; o **bitcoind** na raiz (e o volume `bitcoin-data`) **não** são afectados. Subir a stack outra vez: `cd stack && docker compose up -d --build`. A rede `bitcoin-coder-net` é **partilhada**: pode ser criada pelo compose na **raiz** (bitcoind) ou pela **stack** — em ambos os casos é o mesmo nome de rede.
 - **Nomes Docker:** o projecto Compose chama-se `stack`; contentores `stack-mariadb`, `stack-backend`, etc. Se ainda tiveres contentores antigos `zeroconf-*` **a correr**, faz `docker stop` / `docker rm` nesses nomes — caso contrário ocupam as mesmas portas (**8200**, **5177**, **9080**, **9443**) e o novo `stack-backend` falha com “port is already allocated”. **Não** corras duas stacks ao mesmo tempo sobre os mesmos volumes MariaDB.
 - Portas no `.env`: usa `STACK_*_HOST_PORT`.
 - **Mainnet**: na primeira subida o nó faz **IBD** (download grande; prune só limita o disco final, não o tráfego inicial). **Sem `txindex`** (incompatível com prune): `getrawtransaction` é limitado para tx muito antigas.

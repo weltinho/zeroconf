@@ -1,7 +1,6 @@
-# Stack da app (MariaDB, API, frontend, Caddy). Liga-se ao bitcoind pela rede externa
-# `bitcoin-coder-net` (criada pelo compose na raiz do repo).
-#
-# Na raiz do repo: `docker compose up -d` (bitcoind), depois aqui: `docker compose up -d --build`
+# Stack da app (MariaDB, API, frontend, Caddy). Usa a rede nomeada `bitcoin-coder-net`
+# (o mesmo nome que o compose na raiz do bitcoind): é criada aqui se ainda não existir,
+# ou junta-se à rede já criada pelo bitcoind.
 
 name: stack
 
@@ -72,7 +71,6 @@ services:
 
 networks:
   bitcoin-coder:
-    external: true
     name: bitcoin-coder-net
 
 # Nomes fixos para não perder dados ao mudar o nome do projecto Compose (`stack`).
