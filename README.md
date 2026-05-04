@@ -55,28 +55,20 @@ cp .env.example .env
 docker compose up -d
 ```
 
-3. **Volumes da stack** (MariaDB/Caddy): só na primeira vez num Docker “limpo”, se o Compose disser que o volume externo não existe:
-
-```bash
-docker volume create bitcoin-coder_mariadb-data
-docker volume create bitcoin-coder_caddy-data
-docker volume create bitcoin-coder_caddy-config
-```
-
-4. Suba a **stack da app** (directório `stack/`). A rede `bitcoin-coder-net` é criada aqui se ainda não existir (ou já veio do passo 2 com o bitcoind).
+3. Suba a **stack da app** (directório `stack/`). A rede `bitcoin-coder-net` e os volumes nomeados são criados à primeira subida se não existirem.
 
 ```bash
 cd stack && docker compose up -d --build
 ```
 
-5. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` no `.env`):
+4. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` no `.env`):
 
 ```bash
 curl http://localhost:8200/health
 curl http://localhost:8200/rpc/getblockchaininfo
 ```
 
-6. Abra a UI no navegador:
+5. Abra a UI no navegador:
 
 `https://localhost:9443` por omissão (mapeamento **9443→443** no Caddy; aceite o certificado interno na primeira vez).
 

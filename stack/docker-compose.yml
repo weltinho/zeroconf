@@ -73,16 +73,12 @@ networks:
   bitcoin-coder:
     name: bitcoin-coder-net
 
-# Nomes fixos para não perder dados ao mudar o nome do projecto Compose (`stack`).
-# Criados pela stack antiga em monorepo; `external: true` evita o aviso "expected stack".
-# Máquina nova sem estes volumes: ver README (três `docker volume create` de uma vez).
+# Nomes fixos para dados persistentes mesmo com projecto Compose `stack`.
+# Sem `external`: na primeira `docker compose up` o Docker cria estes volumes automaticamente.
 volumes:
   mariadb-data:
     name: bitcoin-coder_mariadb-data
-    external: true
   caddy-data:
     name: bitcoin-coder_caddy-data
-    external: true
   caddy-config:
     name: bitcoin-coder_caddy-config
-    external: true
