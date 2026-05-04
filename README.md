@@ -55,20 +55,28 @@ cp .env.example .env
 docker compose up -d
 ```
 
-3. Suba a **stack da app** (directório `stack/`). Exige o passo anterior — a rede tem de existir.
+3. **Volumes da stack** (MariaDB/Caddy): só na primeira vez num Docker “limpo”, se o Compose disser que o volume externo não existe:
+
+```bash
+docker volume create bitcoin-coder_mariadb-data
+docker volume create bitcoin-coder_caddy-data
+docker volume create bitcoin-coder_caddy-config
+```
+
+4. Suba a **stack da app** (directório `stack/`). Exige o passo 2 — a rede tem de existir.
 
 ```bash
 cd stack && docker compose up -d --build
 ```
 
-4. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` no `.env`):
+5. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` no `.env`):
 
 ```bash
 curl http://localhost:8200/health
 curl http://localhost:8200/rpc/getblockchaininfo
 ```
 
-5. Abra a UI no navegador:
+6. Abra a UI no navegador:
 
 `https://localhost:9443` por omissão (mapeamento **9443→443** no Caddy; aceite o certificado interno na primeira vez).
 
@@ -93,7 +101,8 @@ docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 ## Notas
 
 - **Dois composes:** `docker compose down` **só em `stack/`** derruba MariaDB, API, frontend e Caddy; o **bitcoind** na raiz (e o volume `bitcoin-data`) **não** são afectados. Subir a stack outra vez: `cd stack && docker compose up -d --build`. A rede `bitcoin-coder-net` tem de existir (o compose na raiz cria-a ao subir o `bitcoind`).
-- **Nomes Docker:** o projecto Compose chama-se `stack`; contentores `stack-mariadb`, `stack-backend`, etc. Se ainda tiveres contentores antigos `zeroconf-*`, remove-os antes (`docker rm`) para evitar conflito de nome. Portas no `.env`: usa `STACK_*_HOST_PORT` (substitui `ZEROCONF_*` se ainda usavas isso).
+- **Nomes Docker:** o projecto Compose chama-se `stack`; contentores `stack-mariadb`, `stack-backend`, etc. Se ainda tiveres contentores antigos `zeroconf-*` **a correr**, faz `docker stop` / `docker rm` nesses nomes — caso contrário ocupam as mesmas portas (**8200**, **5177**, **9080**, **9443**) e o novo `stack-backend` falha com “port is already allocated”. **Não** corras duas stacks ao mesmo tempo sobre os mesmos volumes MariaDB.
+- Portas no `.env`: usa `STACK_*_HOST_PORT`.
 - **Mainnet**: na primeira subida o nó faz **IBD** (download grande; prune só limita o disco final, não o tráfego inicial). **Sem `txindex`** (incompatível com prune): `getrawtransaction` é limitado para tx muito antigas.
 - **Portas default mainnet:** RPC **8332** (só rede Docker), P2P **8333** (`8333:8333` no host). ZMQ em **28332** (`BITCOIN_ZMQ_PORT` no backend).
 - Ao mudar de **rede** (main/signet/etc.), use **volume novo** para `bitcoin-data` ou apague o antigo — dados de chain são incompatíveis.
