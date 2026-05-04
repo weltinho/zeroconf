@@ -34,4 +34,7 @@ networks:
 
 volumes:
   bitcoin-data:
-    name: bitcoin-coder_bitcoin-data
+    # Por omissão: volume actual do projecto. Para recuperar sync antiga num volume já existente,
+    # define na raiz no `.env`: BITCOIN_DATA_VOLUME=bitcoind-realtime-lab_bitcoin-data
+    # Para nova máquina sem volume: docker volume create bitcoin-coder_bitcoin-data (ou o nome que escolheres).
+    name: ${BITCOIN_DATA_VOLUME:-bitcoin-coder_bitcoin-data}
