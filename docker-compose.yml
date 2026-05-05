@@ -15,9 +15,12 @@ services:
       - -rpcpassword=${BITCOIN_RPC_PASSWORD:-bitcoinrpcdevpassword}
       - -reindex-chainstate=${BITCOIN_REINDEX_CHAINSTATE:-0}
       - -reindex=${BITCOIN_REINDEX:-0}
+
     volumes:
       - ./infra/bitcoin/bitcoin.conf:/bitcoin/bitcoin.conf:ro
       - bitcoin-data:/home/bitcoin/.bitcoin
+      # AssumeUTXO: snapshot .dat no host (VPS) → /mnt/snapshots. `loadtxoutset /mnt/snapshots/<ficheiro>.dat`
+      - /var/projetos/bitcoind-realtime-lab/snapshots:/mnt/snapshots:ro
     ports:
       - "8333:8333"
     expose:
