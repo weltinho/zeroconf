@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from app import main
+from app.routers.auth_adm import get_adm_user
 
 
 @pytest.fixture
@@ -12,164 +13,95 @@ def client(monkeypatch: pytest.MonkeyPatch) -> AsyncGenerator[TestClient, None]:
     async def noop() -> None:
         return None
 
-    # Evita iniciar componentes reais (ZMQ/HTTP) durante testes de rota.
     monkeypatch.setattr(main.zmq_relay, "start", noop)
     monkeypatch.setattr(main.zmq_relay, "stop", noop)
     monkeypatch.setattr(main.rpc, "aclose", noop)
 
+    main.app.dependency_overrides[get_adm_user] = lambda: {"sub": "test", "uid": 1}
+
     with TestClient(main.app) as test_client:
         yield test_client
 
+    main.app.dependency_overrides.clear()
+
 
 def test_health_returns_status_and_network(client: TestClient) -> None:
-    # Verifica contrato básico do health check da API.
-    # Não fixa rede específica (signet/regtest/mainnet/testnet), apenas valida consistência.
     response = client.get("/health")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "network": main.settings.bitcoin_network}
 
 
-def test_rpc_passthrough_success(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
-    # Garante que o endpoint REST /rpc/{method} repassa o método ao cliente RPC
-    # e devolve o resultado no formato padronizado da API.
-    expected = {"chain": "any-network"}
+def test_adm_node_chain_returns_summary(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = {
+        "chain": "signet",
+        "blocks": 100,
+        "headers": 100,
+        "verificationprogress": 1.0,
+        "initialblockdownload": False,
+    }
 
-    async def fake_call(
-        method: str, params: list[object] | None = None, wallet: str | None = None
-    ):
+    async def fake_call(method: str, params=None, wallet=None):
         assert method == "getblockchaininfo"
-        assert params is None
-        assert wallet is None
         return expected
 
     monkeypatch.setattr(main.rpc, "call", fake_call)
-    response = client.get("/rpc/getblockchaininfo")
+    response = client.get("/adm/node/chain")
 
     assert response.status_code == 200
-    assert response.json() == {"method": "getblockchaininfo", "wallet": None, "result": expected}
+    body = response.json()
+    assert body["chain"] == "signet"
+    assert body["blocks"] == 100
+    assert body["headers"] == 100
 
 
-def test_rpc_passthrough_jsonrpc_error(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # Quando o bitcoind responde erro lógico JSON-RPC, a API deve mapear para 400.
-    async def fake_call(
-        method: str, params: list[object] | None = None, wallet: str | None = None
-    ):
-        raise main.BitcoinRpcError("Method not found")
+def test_adm_node_chain_maps_rpc_error(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_call(method: str, params=None, wallet=None):
+        raise main.BitcoinRpcError("boom")
 
     monkeypatch.setattr(main.rpc, "call", fake_call)
-    response = client.get("/rpc/invalidmethod")
+    response = client.get("/adm/node/chain")
 
     assert response.status_code == 400
-    assert "Method not found" in response.json()["detail"]
+    assert "boom" in response.json()["detail"]
 
 
-def test_rpc_passthrough_transport_error(
+def test_adm_node_wallet_requires_operator_wallet_config(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Quando há falha de infraestrutura/transporte (rede, indisponibilidade),
-    # a API deve retornar 502 para sinalizar dependência externa indisponível.
-    async def fake_call(
-        method: str, params: list[object] | None = None, wallet: str | None = None
-    ):
-        raise RuntimeError("network down")
-
-    monkeypatch.setattr(main.rpc, "call", fake_call)
-    response = client.get("/rpc/getblockchaininfo")
-
-    assert response.status_code == 502
-    assert "RPC unavailable" in response.json()["detail"]
-
-
-def test_rpc_post_passthrough_with_params(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # POST /rpc/{method} deve encaminhar params JSON-RPC ao cliente de backend.
-    expected = {"ok": True}
-
-    async def fake_call(
-        method: str, params: list[object] | None = None, wallet: str | None = None
-    ):
-        assert method == "getblockhash"
-        assert params == [1]
-        assert wallet is None
-        return expected
-
-    monkeypatch.setattr(main.rpc, "call", fake_call)
-    response = client.post("/rpc/getblockhash", json={"params": [1]})
+    monkeypatch.setattr(main.settings, "bitcoin_operator_wallet", "")
+    response = client.get("/adm/node/wallet")
 
     assert response.status_code == 200
-    assert response.json() == {
-        "method": "getblockhash",
-        "wallet": None,
-        "params": [1],
-        "result": expected,
-    }
+    body = response.json()
+    assert body["configured"] is False
+    assert body["error"]
 
 
-def test_rpc_get_passthrough_with_wallet_query(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+def test_adm_node_chain_requires_auth_without_override(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # GET /rpc/{method}?wallet=... deve repassar contexto de wallet ao cliente RPC.
-    expected = "bcrt1qexample"
+    async def noop() -> None:
+        return None
 
-    async def fake_call(
-        method: str, params: list[object] | None = None, wallet: str | None = None
-    ):
-        assert method == "getnewaddress"
-        assert params is None
-        assert wallet == "student-wallet"
-        return expected
+    monkeypatch.setattr(main.zmq_relay, "start", noop)
+    monkeypatch.setattr(main.zmq_relay, "stop", noop)
+    monkeypatch.setattr(main.rpc, "aclose", noop)
 
-    monkeypatch.setattr(main.rpc, "call", fake_call)
-    response = client.get("/rpc/getnewaddress?wallet=student-wallet")
+    with TestClient(main.app) as raw_client:
+        raw_client.app.state.db_ok = True
+        response = raw_client.get("/adm/node/chain")
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "method": "getnewaddress",
-        "wallet": "student-wallet",
-        "result": expected,
-    }
-
-
-def test_rpc_post_passthrough_with_wallet_query(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # POST /rpc/{method}?wallet=... deve repassar params + wallet corretamente.
-    expected = ["0000000abc..."]
-
-    async def fake_call(method: str, params: list[object] | None = None, wallet: str | None = None):
-        assert method == "generatetoaddress"
-        assert params == [1, "bcrt1qexample"]
-        assert wallet == "student-wallet"
-        return expected
-
-    monkeypatch.setattr(main.rpc, "call", fake_call)
-    response = client.post(
-        "/rpc/generatetoaddress?wallet=student-wallet",
-        json={"params": [1, "bcrt1qexample"]},
-    )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "method": "generatetoaddress",
-        "wallet": "student-wallet",
-        "params": [1, "bcrt1qexample"],
-        "result": expected,
-    }
+    assert response.status_code == 401
 
 
 def test_websocket_rejected_when_zmq_disabled(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Com feature flag de ZMQ desligada, a conexão WS deve ser recusada (policy).
     monkeypatch.setattr(main.settings, "zmq_enabled", False)
 
     with pytest.raises(WebSocketDisconnect) as exc:
         with client.websocket_connect("/ws/events") as websocket:
-            # Alguns ambientes só propagam o close ao tentar ler/escrever no socket.
             websocket.receive_text()
 
     assert exc.value.code == 1008

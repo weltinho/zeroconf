@@ -22,6 +22,9 @@ stack/frontend/dist/
 stack/frontend/vite.config.js
 stack/frontend/vite.config.d.ts
 
+# Snapshots AssumeUTXO (ficheiros enormes; ver infra/bitcoin/ASSUMEUTXO.md)
+/snapshots/
+
 # IDE / OS
 .idea/
 .vscode/

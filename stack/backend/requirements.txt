@@ -3,3 +3,9 @@ uvicorn[standard]
 httpx
 pydantic-settings
 pyzmq
+sqlalchemy[asyncio]>=2.0
+aiomysql>=0.2.0
+alembic>=1.13
+passlib[bcrypt]
+bcrypt>=4,<5
+itsdangerous>=2.0

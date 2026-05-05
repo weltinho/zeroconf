@@ -7,7 +7,6 @@ import pytest
 import websockets
 
 
-BACKEND_BASE_URL = os.getenv("TEST_BACKEND_BASE_URL", "http://127.0.0.1:8000")
 BACKEND_WS_URL = os.getenv("TEST_BACKEND_WS_URL", "ws://127.0.0.1:8000/ws/events")
 BITCOIND_HOST = os.getenv("BITCOIN_HOST", "bitcoind")
 BITCOIND_PORT = os.getenv("BITCOIN_RPC_PORT", "8332")
@@ -39,38 +38,6 @@ async def _bitcoind_rpc(
     if body.get("error"):
         raise RuntimeError(f"bitcoind RPC error: {body['error']}")
     return body["result"]
-
-
-@pytest.mark.asyncio
-async def test_rpc_passthrough_matches_direct_bitcoind_result() -> None:
-    # Valida fidelidade do RPC: backend deve repassar o mesmo resultado do bitcoind.
-    # Em signet pública o tip pode avançar entre pedidos; pedimos em paralelo e repetimos se divergir.
-    async with httpx.AsyncClient(timeout=15.0) as rpc_client:
-        last_backend: object | None = None
-        last_direct: object | None = None
-        for attempt in range(25):
-            backend_response, direct_result = await asyncio.gather(
-                rpc_client.get(f"{BACKEND_BASE_URL}/rpc/getblockchaininfo"),
-                _bitcoind_rpc(rpc_client, "getblockchaininfo"),
-            )
-            backend_response.raise_for_status()
-            backend_result = backend_response.json()["result"]
-            last_backend = backend_result
-            last_direct = direct_result
-
-            if backend_result == direct_result:
-                return
-
-            if attempt == 0:
-                print("\n[RPC] mismatch (live chain?), retrying…")
-                print("[RPC] backend:", json.dumps(backend_result, indent=2, sort_keys=True))
-                print("[RPC] direct:", json.dumps(direct_result, indent=2, sort_keys=True))
-
-            await asyncio.sleep(0.1)
-
-        print("\n[RPC] final backend:", json.dumps(last_backend, indent=2, sort_keys=True))
-        print("[RPC] final direct:", json.dumps(last_direct, indent=2, sort_keys=True))
-        assert last_backend == last_direct
 
 
 @pytest.mark.asyncio
@@ -124,22 +91,22 @@ async def test_zmq_websocket_relay_matches_bitcoind_hash_notifications() -> None
             got_hashblock = False
             got_hashtx = False
 
-            # Lê alguns eventos para encontrar ambos os tópicos esperados.
+            # Relay envia resumo (_shape_for_operator): hash_do_bloco / txid, não payload_hex bruto.
             for _ in range(10):
                 raw_message = await asyncio.wait_for(ws.recv(), timeout=8)
                 event = json.loads(raw_message)
                 print("[ZMQ] relay event:")
                 print(json.dumps(event, indent=2, sort_keys=True))
 
-                if (
-                    event.get("topic") == "hashblock"
-                    and event.get("payload_hex") == expected_block_hash
+                if event.get("topic") == "hashblock" and (
+                    event.get("hash_do_bloco") == expected_block_hash
+                    or event.get("payload_hex") == expected_block_hash
                 ):
                     got_hashblock = True
 
-                if (
-                    event.get("topic") == "hashtx"
-                    and event.get("payload_hex") == expected_coinbase_txid
+                if event.get("topic") == "hashtx" and (
+                    event.get("txid") == expected_coinbase_txid
+                    or event.get("payload_hex") == expected_coinbase_txid
                 ):
                     got_hashtx = True
 

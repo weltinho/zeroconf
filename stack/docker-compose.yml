@@ -1,6 +1,9 @@
 # Stack da app (MariaDB, API, frontend, Caddy). Usa a rede nomeada `bitcoin-coder-net`
 # (o mesmo nome que o compose na raiz do bitcoind): é criada aqui se ainda não existir,
 # ou junta-se à rede já criada pelo bitcoind.
+#
+# Env: `stack/.env` (esta pasta). O backend também carrega `../.env` na raiz para
+# BITCOIN_RPC_* iguais aos do bitcoind sem duplicar secrets da stack.
 
 name: stack
 
@@ -9,13 +12,13 @@ services:
     image: mariadb:11.4
     container_name: stack-mariadb
     restart: unless-stopped
-    environment:
-      MARIADB_DATABASE: ${MARIADB_DATABASE:-stack}
-      MARIADB_USER: ${MARIADB_USER:-stack}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-stackdevpassword}
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-stackrootdevpassword}
+    env_file:
+      - .env
     volumes:
       - mariadb-data:/var/lib/mysql
+    ports:
+      # TablePlus: localhost:${STACK_MARIADB_HOST_PORT:-3306}
+      - "${STACK_MARIADB_HOST_PORT:-3306}:3306"
     expose:
       - "3306"
     healthcheck:
@@ -30,16 +33,19 @@ services:
       context: ./backend
     container_name: stack-backend
     restart: unless-stopped
-    # `../.env` = raiz do repo; `stack/.env` opcional sobrescreve (quem mete tudo em stack/).
+    # Raiz: RPC user/pass iguais ao bitcoind; esta pasta: MariaDB, SECRET_KEY, ADM, portas em ${}.
     env_file:
-      - ../.env
-      - path: ./.env
+      - path: ../.env
         required: false
+      - .env
     volumes:
       - ./backend:/app
     ports:
       - "${STACK_BACKEND_HOST_PORT:-8200}:8000"
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      mariadb:
+        condition: service_healthy
     networks:
       - default
       - bitcoin-coder
@@ -49,6 +55,12 @@ services:
       context: ./frontend
     container_name: stack-frontend
     restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Código local (hot reload); node_modules fica no volume anónimo da imagem.
+      - ./frontend:/app
+      - /app/node_modules
     depends_on:
       - backend
     ports:
@@ -58,12 +70,9 @@ services:
     image: caddy:2.8
     container_name: stack-caddy
     restart: unless-stopped
-    # Ordem: defaults, raiz do repo, depois `stack/.env` (último ganha se existir).
     env_file:
       - ./caddy.defaults.env
-      - ../.env
-      - path: ./.env
-        required: false
+      - .env
     depends_on:
       - frontend
       - backend
@@ -76,11 +85,12 @@ services:
       - caddy-config:/config
 
 networks:
+  # Partilhada com o bitcoind (compose na raiz). Cria antes se só subires o stack:
+  #   docker network create bitcoin-coder-net
   bitcoin-coder:
     name: bitcoin-coder-net
+    external: true
 
-# Nomes fixos para dados persistentes mesmo com projecto Compose `stack`.
-# Sem `external`: na primeira `docker compose up` o Docker cria estes volumes automaticamente.
 volumes:
   mariadb-data:
     name: bitcoin-coder_mariadb-data

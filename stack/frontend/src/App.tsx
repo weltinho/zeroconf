@@ -1,13 +1,33 @@
-import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
+import { PublicLayout } from "./layouts/PublicLayout";
+import { AdmGateLayout } from "./pages/adm/AdmGateLayout";
+import { AdmHomePage } from "./pages/adm/AdmHomePage";
 import { HomePage } from "./pages/HomePage";
-import { RpcLabPage } from "./pages/RpcLabPage";
+import { NodeToolsPage } from "./pages/NodeToolsPage";
+
+function routerBasename(): string | undefined {
+  const raw = import.meta.env.BASE_URL ?? "/";
+  if (raw === "/" || raw === "") {
+    return undefined;
+  }
+  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+}
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={routerBasename()}>
       <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/lab/rpc" element={<RpcLabPage />} />
+        <Route element={<PublicLayout />}>
+          <Route path="/" element={<HomePage />} />
+        </Route>
+
+        <Route path="/adm" element={<AdmGateLayout />}>
+          <Route index element={<AdmHomePage />} />
+          <Route path="node" element={<NodeToolsPage />} />
+        </Route>
+
+        <Route path="/tools/node" element={<Navigate to="/adm/node" replace />} />
+        <Route path="/lab/rpc" element={<Navigate to="/adm/node" replace />} />
       </Routes>
     </BrowserRouter>
   );

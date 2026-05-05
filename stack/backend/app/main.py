@@ -1,108 +1,84 @@
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel
+import asyncio
+import logging
+import time
+from contextlib import asynccontextmanager
 
-from app.bitcoin_rpc import BitcoinRpcClient, BitcoinRpcError
+from fastapi import FastAPI
+
+from app.bitcoin_rpc import BitcoinRpcError
+from app.deps import rpc, zmq_relay
+from app.routers import auth_adm, events as events_router, health, node as node_router
 from app.settings import settings
-from app.zmq_events import ZmqEventRelay
 
-# Instancia principal da API HTTP/WebSocket.
-app = FastAPI(title="bitcoin-coder API", version="0.1.0")
-# Cliente que conversa com o bitcoind via JSON-RPC (HTTP).
-rpc = BitcoinRpcClient()
-# Relay que escuta ZMQ do bitcoind e retransmite para clientes WebSocket.
-zmq_relay = ZmqEventRelay()
+logger = logging.getLogger(__name__)
 
 
-class RpcCallRequest(BaseModel):
-    # Lista posicional de parâmetros JSON-RPC.
-    params: list[object] = []
-
-
-@app.get("/health")
-async def health() -> dict[str, str]:
-    # Endpoint simples para verificar se a API subiu.
-    # "network" ajuda a confirmar se estamos em signet/regtest/testnet/mainnet.
-    return {"status": "ok", "network": settings.bitcoin_network}
-
-
-# Endpoint para passar métodos RPC para o bitcoind.(Assim nosso app vai ter os mesmos metodos do bitcoind) =P
-@app.get("/rpc/{method}")
-async def passthrough_rpc(
-    method: str, wallet: str | None = Query(default=None)
-) -> dict[str, object]:
-    # "pass-through": recebe o nome do método e encaminha para o bitcoind.
-    # Exemplo: /rpc/getblockchaininfo
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    app.state.db_ok = False
     try:
-        result = await rpc.call(method, wallet=wallet)
-        # Retorno padronizado para o frontend/consumidor.
-        return {"method": method, "wallet": wallet, "result": result}
-    except BitcoinRpcError as exc:
-        # Erro funcional do JSON-RPC (método inválido, parâmetro incorreto etc).
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        # Falha de infraestrutura/comunicação com o node.
-        raise HTTPException(status_code=502, detail=f"RPC unavailable: {exc}") from exc
+        from app.bootstrap_adm import bootstrap_admin_if_empty
+        from app.db import dispose_engine, get_session_factory, run_db_migrations
 
+        # 1) Alembic aplica `alembic/versions/*` (ex.: CREATE TABLE adm_users).
+        # 2) Bootstrap opcional: primeiro utilizador admin se a tabela estiver vazia.
+        t0 = time.perf_counter()
+        await run_db_migrations()
+        logger.info("Arranque: migrations Alembic em %.2fs", time.perf_counter() - t0)
 
-@app.post("/rpc/{method}")
-async def passthrough_rpc_with_params(
-    method: str,
-    payload: RpcCallRequest,
-    wallet: str | None = Query(default=None),
-) -> dict[str, object]:
-    # Variante com body JSON para métodos que recebem params.
-    try:
-        result = await rpc.call(method, payload.params, wallet=wallet)
-        return {
-            "method": method,
-            "wallet": wallet,
-            "params": payload.params,
-            "result": result,
-        }
-    except BitcoinRpcError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"RPC unavailable: {exc}") from exc
+        t1 = time.perf_counter()
+        factory = get_session_factory()
+        async with factory() as session:
+            await bootstrap_admin_if_empty(session)
+        logger.info("Arranque: bootstrap admin em %.2fs", time.perf_counter() - t1)
 
+        app.state.db_ok = True
+    except Exception:
+        logger.exception(
+            "Falha ao inicializar MariaDB — login admin desactivado até a BD estar disponível."
+        )
+        try:
+            from app.db import dispose_engine as _dispose
 
-# Endpoint para capturar eventos do ZMQ do bitcoind. Assim podemos receber eventos do bitcoind em tempo real, de forma assincrona.
-# e idêntica ao zmq do próprio bitcoind, apenas retransmitindo para o cliente WebSocket.
-@app.websocket("/ws/events")
-async def websocket_events(websocket: WebSocket) -> None:
-    # Endpoint de push em tempo real para eventos vindos do ZMQ.
-    # Só funciona se a feature estiver habilitada em settings.
-    if not settings.zmq_enabled:
-        # 1008 = Policy Violation (bom para recusar conexão por regra de app).
-        await websocket.close(code=1008, reason="ZMQ relay disabled")
-        return
+            await _dispose()
+        except Exception:
+            logger.exception("dispose_engine após falha de BD")
 
-    # Aceita o handshake WebSocket.
-    await websocket.accept()
-    # Registra cliente para começar a receber broadcast de eventos.
-    await zmq_relay.add_client(websocket)
-    try:
-        while True:
-            # Mantém conexão viva enquanto cliente estiver conectado.
-            # Se o cliente cair/fechar aba, cai no WebSocketDisconnect.
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        # Desconexão esperada do lado do cliente.
-        pass
-    finally:
-        # Garante limpeza da lista de clientes mesmo em erro.
-        await zmq_relay.remove_client(websocket)
+    # ZMQ em task paralela: não atrasa o primeiro `yield` (bind HTTP / aceitar pedidos).
+    zmq_task = asyncio.create_task(zmq_relay.start())
 
+    def _zmq_done(t: asyncio.Task[None]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Falha ao iniciar relay ZMQ")
 
-@app.on_event("startup")
-async def startup_event() -> None:
-    # Ao iniciar API, inicia consumidor ZMQ em background.
-    await zmq_relay.start()
+    zmq_task.add_done_callback(_zmq_done)
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event() -> None:
-    # Ordem de desligamento:
-    # 1) para relay/broadcast ZMQ e fecha conexões WebSocket
-    # 2) fecha cliente HTTP do JSON-RPC
     await zmq_relay.stop()
     await rpc.aclose()
+    try:
+        from app.db import dispose_engine as _dispose_end
+
+        await _dispose_end()
+    except Exception:
+        logger.exception("dispose_engine no shutdown")
+
+
+app = FastAPI(
+    title="ZeroConf API",
+    version="0.1.0",
+    lifespan=lifespan,
+)
+
+app.include_router(health.router)
+app.include_router(auth_adm.router)
+app.include_router(node_router.router)
+app.include_router(events_router.router)
+
+# Re-export for tests and monkeypatching (same objects as app.deps).
+__all__ = ["app", "rpc", "zmq_relay", "settings", "BitcoinRpcError"]

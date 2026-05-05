@@ -1,16 +1,50 @@
 export type UiText = {
   backToHome: string;
+  backToAdm: string;
   homeTitle: string;
   homeSubtitle: string;
-  cardRpcTitle: string;
-  cardRpcDesc: string;
-  cardSoonTitle: string;
-  cardSoonDesc: string;
-  title: string;
-  subtitle: string;
+  matrixNavFlux: string;
+  matrixNavInfo: string;
+  matrixNavAdm: string;
+  matrixHeroTitle: string;
+  matrixHeroBullet1: string;
+  matrixHeroBullet2: string;
+  matrixNetStatus: string;
+  clientFooterOperators: string;
+  cardToolsTitle: string;
+  cardToolsDesc: string;
+  cardRoadmapTitle: string;
+  cardRoadmapDesc: string;
   logoAriaLabel: string;
   locale: string;
-  rpcPlayground: string;
+  /** Interface fixada em pt-BR (independente do navegador). */
+  localeFixedBr: string;
+  admLoginKicker: string;
+  admLoginTitle: string;
+  admUsernameLabel: string;
+  admPasswordLabel: string;
+  admSubmit: string;
+  admCheckingSession: string;
+  admErrorGeneric: string;
+  admLoginFoot: string;
+  admHomeTitle: string;
+  admHomeSubtitle: string;
+  admNavConsole: string;
+  admNavNode: string;
+  admNavPublic: string;
+  admLogout: string;
+  nodeToolsNav: string;
+  nodeDashTitle: string;
+  nodeDashSubtitle: string;
+  nodeChainHeading: string;
+  nodeWalletHeading: string;
+  nodeWalletHint: string;
+  nodeEventsHeading: string;
+  nodeEventsHint: string;
+  nodeRefresh: string;
+  nodeToolsTitle: string;
+  nodeToolsSubtitle: string;
+  nodeToolsRpcHeading: string;
   paramsLabel: string;
   typeToFilter: string;
   noMethods: string;
@@ -24,6 +58,7 @@ export type UiText = {
   walletPlaceholder: string;
   noRpcResponse: string;
   zmqTitle: string;
+  zmqRelayHint: string;
   zmqTopicFilterLabel: string;
   zmqTopicAll: string;
   zmqEventsVisible: string;
@@ -45,18 +80,58 @@ export type UiText = {
 export const UI_TEXT: Record<"en" | "pt", UiText> = {
   en: {
     backToHome: "Home",
-    homeTitle: "Bitcoin Coder Lab",
+    backToAdm: "[ADM]",
+    homeTitle: "ZeroConf Prop",
     homeSubtitle:
-      "Pick a workspace. The RPC playground and ZMQ stream live on the lab page.",
-    cardRpcTitle: "RPC + ZMQ lab",
-    cardRpcDesc: "JSON-RPC passthrough and real-time relay events from your node.",
-    cardSoonTitle: "More soon",
-    cardSoonDesc: "Additional guides and tools will appear here.",
-    title: "Bitcoin Coder Lab UI",
-    subtitle: "Test RPC passthrough and inspect real-time ZMQ relay events.",
-    logoAriaLabel: "Bitcoin Real Time — Requests and Events",
+      "Bitcoin Core as the backend: mempool visibility and wallet RPC for prop liquidity workflows.",
+    matrixNavFlux: "FLUXO",
+    matrixNavInfo: "INFO",
+    matrixNavAdm: "ADM",
+    matrixHeroTitle: "> ENTER_ZERoconf",
+    matrixHeroBullet1:
+      "> Liquidity rails backed by your node — mempool-first, no fairy tales.",
+    matrixHeroBullet2: "> Small capital on-chain; integrate swaps later. Freedom to iterate.",
+    matrixNetStatus: "● NETWORK: Bitcoin Signet — operator wallet",
+    clientFooterOperators: "Operators: [ADM] for node dashboard and admin tools.",
+    cardToolsTitle: "Node console",
+    cardToolsDesc: "Chain state, single operator wallet, light ZMQ (new block / tx).",
+    cardRoadmapTitle: "Guided flow (next)",
+    cardRoadmapDesc:
+      "Issue address → mempool payment → spend unconfirmed → MariaDB audit trail.",
+    logoAriaLabel: "ZeroConf Prop — Bitcoin Core backend",
     locale: "Browser locale",
-    rpcPlayground: "RPC Playground",
+    localeFixedBr: "Interface fixed to Portuguese (Brazil)",
+    admLoginKicker: "// zeroconf.admin ▸ authentication_required",
+    admLoginTitle: "ACCESS_CONSOLE",
+    admUsernameLabel: "operator_id",
+    admPasswordLabel: "passphrase",
+    admSubmit: "UNLOCK ▸",
+    admCheckingSession: "// verifying_session_with_backend…",
+    admErrorGeneric: "Login failed — check API and database.",
+    admLoginFoot:
+      "Password is verified server-side (bcrypt in MariaDB); session cookie is HTTP-only.",
+    admHomeTitle: "Admin console",
+    admHomeSubtitle:
+      "Operator-facing tools. End users stay on the public surface.",
+    admNavConsole: "HOME",
+    admNavNode: "NODE",
+    admNavPublic: "Public site",
+    admLogout: "LOCK_SESSION",
+    nodeToolsNav: "NODE",
+    nodeDashTitle: "Node dashboard",
+    nodeDashSubtitle:
+      "Chain status and operator wallet (no generic RPC passthrough). ZMQ: new blocks and mempool tx ids only.",
+    nodeChainHeading: "Chain",
+    nodeWalletHeading: "Wallet",
+    nodeWalletHint:
+      "Set BITCOIN_OPERATOR_WALLET in backend env. Fee address index 0 is auto-created and shown with balance.",
+    nodeEventsHeading: "Live events",
+    nodeEventsHint: "WebSocket: hashblock + hashtx only (configured on the API).",
+    nodeRefresh: "Refresh",
+    nodeToolsTitle: "Operator tools",
+    nodeToolsSubtitle:
+      "Chain/mempool, raw transactions, wallet RPC — filtered for ZeroConf workflows.",
+    nodeToolsRpcHeading: "RPC",
     paramsLabel: "params",
     typeToFilter: "Type to filter methods...",
     noMethods: "No methods found.",
@@ -65,11 +140,13 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     callRpc: "Call RPC",
     transportWithParams: "(JSON-RPC params supported)",
     transportNoParams: "(no params expected for this method)",
-    exampleHint: "Example params auto-loaded from RPC catalog when selected.",
+    exampleHint: "Example params load when you pick a method from the list.",
     paramsPlaceholder: 'JSON array, e.g. [1] or ["tb1...", 1]',
-    walletPlaceholder: "Wallet context (optional), e.g. student-wallet",
+    walletPlaceholder: "Wallet name (optional), e.g. operator-wallet",
     noRpcResponse: "No RPC response yet.",
-    zmqTitle: "ZMQ Event Stream",
+    zmqTitle: "ZMQ → WebSocket",
+    zmqRelayHint:
+      "Live summary: new blocks + wallet-relevant txids only (filtered in backend).",
     zmqTopicFilterLabel: "Topic",
     zmqTopicAll: "All topics",
     zmqEventsVisible: "{visible} of {total} events",
@@ -90,18 +167,58 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
   },
   pt: {
     backToHome: "Início",
-    homeTitle: "Bitcoin Coder Lab",
+    backToAdm: "[ADM]",
+    homeTitle: "ZeroConf Prop",
     homeSubtitle:
-      "Escolha um espaço de trabalho. O laboratório RPC e o stream ZMQ ficam na página do lab.",
-    cardRpcTitle: "Laboratório RPC + ZMQ",
-    cardRpcDesc: "Passthrough JSON-RPC e eventos do relay em tempo real do seu nó.",
-    cardSoonTitle: "Em breve",
-    cardSoonDesc: "Outros guias e ferramentas aparecerão aqui.",
-    title: "Bitcoin Coder Lab UI",
-    subtitle: "Teste o passthrough RPC e inspecione eventos ZMQ em tempo real.",
-    logoAriaLabel: "Bitcoin em tempo real — requisições e eventos",
+      "Bitcoin Core como backend: visibilidade na mempool e RPC de carteira para liquidez prop.",
+    matrixNavFlux: "FLUXO",
+    matrixNavInfo: "INFO",
+    matrixNavAdm: "ADM",
+    matrixHeroTitle: "> ENTRAR_ZERoconf",
+    matrixHeroBullet1:
+      "> Liquidez apoiada no teu nó — mempool primeiro, sem ilusões.",
+    matrixHeroBullet2: "> Capital fino on-chain; swaps externos depois. Liberdade para iterar.",
+    matrixNetStatus: "● REDE: Bitcoin Signet — carteira operador",
+    clientFooterOperators: "Operadores: [ADM] para painel do nó e admin.",
+    cardToolsTitle: "Consola do nó",
+    cardToolsDesc: "Estado da cadeia, carteira única do operador, ZMQ leve (bloco / tx).",
+    cardRoadmapTitle: "Fluxo guiado (a seguir)",
+    cardRoadmapDesc:
+      "Endereço → pagamento na mempool → gastar sem confirmação → auditoria MariaDB.",
+    logoAriaLabel: "ZeroConf Prop — backend Bitcoin Core",
     locale: "Idioma do navegador",
-    rpcPlayground: "Laboratório RPC",
+    localeFixedBr: "Idioma da interface: Português (Brasil)",
+    admLoginKicker: "// zeroconf.admin ▸ autenticação necessária",
+    admLoginTitle: "ACCESS_CONSOLE",
+    admUsernameLabel: "operator_id",
+    admPasswordLabel: "senha",
+    admSubmit: "DESBLOQUEAR ▸",
+    admCheckingSession: "// a_verificar_sessão_no_backend…",
+    admErrorGeneric: "Falha no login — verifica API e base de dados.",
+    admLoginFoot:
+      "Senha validada no servidor (bcrypt na MariaDB); cookie de sessão é HTTP-only.",
+    admHomeTitle: "Consola administrativa",
+    admHomeSubtitle:
+      "Ferramentas do operador. Utilizadores finais ficam na área pública.",
+    admNavConsole: "INÍCIO",
+    admNavNode: "NODE",
+    admNavPublic: "Site público",
+    admLogout: "BLOQUEAR_SESSÃO",
+    nodeToolsNav: "NODE",
+    nodeDashTitle: "Painel do nó",
+    nodeDashSubtitle:
+      "Estado da blockchain e carteira do operador (sem passthrough RPC genérico). ZMQ só bloco novo e txid na mempool.",
+    nodeChainHeading: "Blockchain",
+    nodeWalletHeading: "Carteira",
+    nodeWalletHint:
+      "Carteira definida no backend. Endereço de taxa índice 0 é auto-criado e exibido com saldo.",
+    nodeEventsHeading: "Eventos ao vivo",
+    nodeEventsHint: "WebSocket: só hashblock + hashtx pertinentes a ESTE node (configurado na API).",
+    nodeRefresh: "Atualizar",
+    nodeToolsTitle: "Ferramentas do operador",
+    nodeToolsSubtitle:
+      "Chain/mempool, transacções raw, RPC de carteira — focado em ZeroConf.",
+    nodeToolsRpcHeading: "RPC",
     paramsLabel: "parâmetros",
     typeToFilter: "Digite para filtrar métodos...",
     noMethods: "Nenhum método encontrado.",
@@ -110,11 +227,13 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     callRpc: "Chamar RPC",
     transportWithParams: "(suporta parâmetros JSON-RPC)",
     transportNoParams: "(este método não espera parâmetros)",
-    exampleHint: "Exemplo de parâmetros carregado automaticamente ao selecionar.",
+    exampleHint: "Parâmetros de exemplo ao escolher um método da lista.",
     paramsPlaceholder: 'Array JSON, ex.: [1] ou ["tb1...", 1]',
-    walletPlaceholder: "Contexto de wallet (opcional), ex.: student-wallet",
+    walletPlaceholder: "Nome da carteira (opcional), ex.: operator-wallet",
     noRpcResponse: "Sem resposta RPC ainda.",
-    zmqTitle: "Stream de Eventos ZMQ",
+    zmqTitle: "Eventos do nó (ZMQ)",
+    zmqRelayHint:
+      "Só resumos úteis: blocos novos e txids relevantes para tua carteira (filtrado no backend).",
     zmqTopicFilterLabel: "Tópico",
     zmqTopicAll: "Todos os tópicos",
     zmqEventsVisible: "{visible} de {total} eventos",

@@ -1,90 +1,90 @@
-# bitcoind-realtime-lab
+# zeroconf — ZeroConf Prop
 
-Playground para **JSON-RPC** e **eventos ZMQ** (`hashblock`, `hashtx`, `rawblock`, `rawtx`, `sequence`) de um nó Bitcoin Core, com stack pronta em Docker.
+Produto do hackathon **CoreCraft** (Bitcoin Coders): usar **Bitcoin Core** como backend real — **JSON-RPC**, **ZMQ** e (na próxima fase) persistência **MariaDB** para um fluxo de **prop liquidity** em que importa ver e mover fundos **antes da confirmação**.
 
-- **`bitcoind`** em **mainnet** com **prune** (~15 GiB de blocos no `bitcoin.conf`), imagem [`bitcoin/bitcoin:31.0`](https://hub.docker.com/r/bitcoin/bitcoin) (multi-arquitetura).
-- **Backend** Python (FastAPI): repasse de RPC para o nó e relay WebSocket dos eventos ZMQ.
-- **Frontend** React + Vite: interface didática para testar RPC e visualizar eventos.
-- **Caddy**: HTTPS e proxy reverso entre navegador e serviços.
+Esta fase do repositório foca stack estável (**mainnet** prune, FastAPI, React, Caddy, MariaDB no compose) e UI/backend orientados a esse propósito — já não é um “lab” genérico só para espetar eventos ZMQ na consola.
+
+## O que há aqui
+
+- **`bitcoind`** em **mainnet** com **prune** (~15 GiB de blocos no `bitcoin.conf`), imagem [`bitcoin/bitcoin:31.0`](https://hub.docker.com/r/bitcoin/bitcoin).
+- **Backend** FastAPI (**ZeroConf API**): passthrough RPC para o nó e relay WebSocket dos eventos ZMQ.
+- **Frontend** React + Vite (**ZeroConf Prop**): entrada principal + ferramentas de operador (RPC curado e stream ZMQ).
+- **Caddy**: HTTPS e proxy reverso.
+- **MariaDB**: serviço no `stack/docker-compose.yml`; integração da API com schema de fluxos virá na fase seguinte.
 
 ## Layout
 
-- **`docker-compose.yml` (raiz):** só **bitcoind** — rede Docker nomeada `bitcoin-coder-net` e volume `bitcoin-data` (IBD demora; mantém este compose estável).
-- **`stack/docker-compose.yml`:** MariaDB, backend, frontend e Caddy — podes iterar aqui sem recriar o nó.
+- **`docker-compose.yml` (raiz):** só **bitcoind** — rede Docker nomeada `bitcoin-coder-net` e volume `bitcoin-data`.
+- **`stack/docker-compose.yml`:** MariaDB, backend, frontend e Caddy — iterar aqui sem recriar o nó.
 - `infra/bitcoin/bitcoin.conf`: mainnet prune, RPC, ZMQ (rede Docker)
 - `stack/infra/caddy/Caddyfile`: proxy HTTPS da stack da app
 - `stack/backend/`: API
-- `stack/frontend/`: UI de apoio
+- `stack/frontend/`: UI
 
 ## Bitcoind (mainnet leve)
 
-Este lab foi ajustado para **rodar mainnet de forma mais leve** em VPS pequena (ex.: AWS free tier), sem abrir mão de um nó real para os **blocos mais recentes** e para o fluxo didático de RPC + ZMQ.
-
 ### Objetivo
 
-- Mostrar um setup de Bitcoin Core que cabe em ambiente barato/grátis.
-- Entregar uma experiência "mainnet de respeito" para monitorar tip, mempool e eventos em tempo real. E demais coisas que podem evoluir disto
-- Evitar o custo de disco de um nó archival completo.
+- Setup de Bitcoin Core adequado a VPS pequena (ex.: free tier).
+- Nó real para blocos recentes, mempool e eventos em tempo real para o produto ZeroConf.
+- Disco contido com prune (não arquivo completo).
 
-### Configuração usada no `bitcoin.conf`
+### Configuração (`bitcoin.conf`)
 
-- `prune=15000`: mantém aproximadamente 15 GiB de blocos no disco.
-- `dbcache=400`: reduz pressão de memória em instâncias pequenas.
-- `par=1`: limita paralelismo para suavizar pico de CPU.
-- `server=1` e `listen=1`: RPC ativo e P2P habilitado.
-- ZMQ em `28332` para eventos (`hashblock`, `hashtx`, `rawblock`, `rawtx`, `sequence`).
+- `prune=15000`, `dbcache=400`, `par=1`, `server=1`, `listen=1`.
+- ZMQ na porta interna **28332** (`hashblock`, `hashtx`, `rawblock`, `rawtx`, `sequence`).
 
-### Trade-offs (importante para iniciantes)
+### Trade-offs
 
-- O nó continua a fazer IBD da mainnet inteira; o prune reduz **armazenamento final**, não o download inicial.
-- `txindex` não pode ser usado com prune; consultas históricas muito antigas ficam limitadas.
-- Em AWS muito pequena (`t3/t4g micro`), sincronização pode ser lenta e sensível a CPU/RAM.
-- Mesmo com prune, reserve margem de disco para SO, Docker, chainstate e logs.
+- IBD da mainnet inteira ainda corre; o prune limita **armazenamento final**, não o download inicial.
+- Sem `txindex` com prune: `getrawtransaction` para txs muito antigas é limitado — documentado para demos.
+- Instâncias muito pequenas podem sincronizar devagar.
 
 ## Quick start
 
-1. Copie o env de exemplo. **`BITCOIN_RPC_USER` / `BITCOIN_RPC_PASSWORD`** vão para o **backend** (via `stack/docker-compose`) e, pelo compose na **raiz**, também para o **bitcoind** (`-rpcuser` / `-rpcpassword`) — uma fonte só (o `bitcoin.conf` fica só com rede/ZMQ/bind).
+1. **Dois ficheiros de ambiente** (não commits com passwords reais):
+   - **Raiz** — só o que o `bitcoind` precisa (e as mesmas `BITCOIN_RPC_*` que o backend vai ler).
+   - **`stack/.env`** — MariaDB, Caddy, `SECRET_KEY`, admin bootstrap, portas `STACK_*`.
 
 ```bash
 cp .env.example .env
+cp stack/.env.example stack/.env
 ```
 
-2. Suba o **bitcoind** na raiz do repositório (cria a rede `bitcoin-coder-net` partilhada com a stack):
+   Alinha **`BITCOIN_RPC_USER` / `BITCOIN_RPC_PASSWORD`** entre **`.env` na raiz** e o que o backend espera: o serviço **backend** carrega **`../.env`** e depois **`stack/.env`** (sem precisares de duplicar RPC na stack).
+
+2. Suba o **bitcoind** na raiz (cria a rede `bitcoin-coder-net` partilhada com a stack):
 
 ```bash
 docker compose up -d
 ```
 
-3. Suba a **stack da app** (directório `stack/`). A rede `bitcoin-coder-net` e os volumes nomeados são criados à primeira subida se não existirem.
+3. Suba a **stack** em `stack/`:
 
 ```bash
 cd stack && docker compose up -d --build
 ```
 
-4. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` no `.env`):
+4. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` em **`stack/.env`**):
 
 ```bash
 curl http://localhost:8200/health
 curl http://localhost:8200/rpc/getblockchaininfo
 ```
 
-5. Abra a UI no navegador:
+5. Abrir a UI: `https://localhost:9443` (mapeamento **9443→443** no Caddy; aceitar certificado interno na primeira vez).
 
-`https://localhost:9443` por omissão (mapeamento **9443→443** no Caddy; aceite o certificado interno na primeira vez).
+**UI:** área pública `/` (tema “Matrix” + ZeroConf); módulo operador `/adm` com login **no backend** (utilizador na MariaDB, bcrypt, cookie HTTP-only assinado com `SECRET_KEY`). Define `ADM_BOOTSTRAP_PASSWORD` em **`stack/.env`** na primeira subida para criar o utilizador `admin`. Consola RPC + ZMQ: `/adm/node`. Redirecionamentos: `/tools/node` e `/lab/rpc` → `/adm/node`.
 
 ## HTTPS (local / IP)
 
-O Caddy escuta em **`:80` / `:443` dentro do contentor**; no host mapeias **9080/9443** por omissão. Usa **`tls internal`**; o aviso do navegador é esperado sem domínio com Let’s Encrypt. Em produção, prefira **domínio + ACME**.
+O Caddy escuta **`:80` / `:443`** no contentor; no host **9080/9443** por omissão. Usa **`tls internal`**; aviso do browser é esperado sem domínio com Let’s Encrypt.
 
-O ficheiro **`.env` na raiz do repo** define **`CADDY_SITE_ADDRESSES`** e **`CADDY_DEFAULT_SNI`** (lista **todas** as formas de acederes: `localhost`, IP público, **domínio DuckDNS**, etc.). Se o domínio **não** estiver nessa lista, o browser tende a mostrar **ERR_SSL_PROTOCOL_ERROR** em `https://teu-dominio:9443` — não é a porta 9443 a falhar, é o **SNI** / certificado. Depois de editar o `.env` na raiz: na pasta `stack/`, `docker compose up -d --force-recreate caddy`.
+O **`stack/.env`** define **`CADDY_SITE_ADDRESSES`** e **`CADDY_DEFAULT_SNI`**. Se o host não estiver na lista: **ERR_SSL_PROTOCOL_ERROR**. Depois de editar: `cd stack && docker compose up -d --force-recreate caddy`.
 
-Muitos clientes **`curl`** (p.ex. LibreSSL no macOS) **não enviam SNI** em URLs só com IPv4; o Caddy pode responder com erro TLS. Defina também **`CADDY_DEFAULT_SNI`** com o **mesmo** IPv4 público (ver `.env.example`).
-
-**`https://novo-dominio` na 443 (sem `:9443`):** o browser usa sempre a **443**; o stack mapeia HTTPS para **9443** no host, por isso outro Caddy (ou o que já tiveres na 443) tem de fazer *reverse proxy* para `https://127.0.0.1:9443` (ou `https://172.17.0.1:9443` a partir de um contentor). Exemplo de bloco e passos: `stack/infra/caddy/Caddyfile.edge.example`. No `.env` da raiz, inclui o **mesmo** hostname em **`CADDY_SITE_ADDRESSES`** e recria o `stack-caddy`.
+Muitos **`curl`** no macOS não enviam SNI em URLs só com IPv4; define **`CADDY_DEFAULT_SNI`** coerente (ver **`stack/.env.example`**). Exemplo edge: `stack/infra/caddy/Caddyfile.edge.example`.
 
 ## Testes (backend)
-
-Dentro do container (como no dia a dia do projeto):
 
 ```bash
 cd stack
@@ -92,12 +92,20 @@ docker compose exec -T backend pip install -r requirements-dev.txt
 docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 ```
 
-## Notas
+## Segurança e mainnet
 
-- **Dois composes:** `docker compose down` **só em `stack/`** derruba MariaDB, API, frontend e Caddy; o **bitcoind** na raiz (e o volume `bitcoin-data`) **não** são afectados. Subir a stack outra vez: `cd stack && docker compose up -d --build`. A rede `bitcoin-coder-net` é **partilhada**: pode ser criada pelo compose na **raiz** (bitcoind) ou pela **stack** — em ambos os casos é o mesmo nome de rede.
-- **Nomes Docker:** o projecto Compose chama-se `stack`; contentores `stack-mariadb`, `stack-backend`, etc. Se ainda tiveres contentores antigos `zeroconf-*` **a correr**, faz `docker stop` / `docker rm` nesses nomes — caso contrário ocupam as mesmas portas (**8200**, **5177**, **9080**, **9443**) e o novo `stack-backend` falha com “port is already allocated”. **Não** corras duas stacks ao mesmo tempo sobre os mesmos volumes MariaDB.
-- Portas no `.env`: usa `STACK_*_HOST_PORT`.
-- **Mainnet**: na primeira subida o nó faz **IBD** (download grande; prune só limita o disco final, não o tráfego inicial). **Sem `txindex`** (incompatível com prune): `getrawtransaction` é limitado para tx muito antigas.
-- **Portas default mainnet:** RPC **8332** (só rede Docker), P2P **8333** (`8333:8333` no host). ZMQ em **28332** (`BITCOIN_ZMQ_PORT` no backend).
-- Ao mudar de **rede** (main/signet/etc.), use **volume novo** para `bitcoin-data` ou apague o antigo — dados de chain são incompatíveis.
-- RPC e ZMQ do `bitcoind` ficam na **rede Docker**; o host expõe **9080/9443** (Caddy, valores por omissão) e **8333** (P2P) se precisar de peer externo.
+- **Mainnet** envolve valor real: montantes mínimos, **carteira dedicada** ao operador, backups conscientes.
+- **Não** expor RPC Bitcoin à Internet sem proteção (modelo actual: RPC só na rede Docker).
+- **Não** commitar passwords RPC, **SECRET_KEY**, `ADM_BOOTSTRAP_PASSWORD` ou segredos — `.env` / `stack/.env` locais e os `.env.example` só com placeholders.
+- **Admin web:** senha nunca vai no bundle do Vite; só **HTTPS** em produção e `COOKIE_SECURE=1` atrás do Caddy com TLS real.
+
+## Notas operacionais
+
+- **Dois `.env`:** na **raiz** só variáveis do `docker-compose` do **bitcoind** + credenciais RPC partilhadas; em **`stack/.env`** toda a config da app (MariaDB, Caddy, `SECRET_KEY`, portas). Se tinhas um `.env` único antigo, parte o conteúdo para estes dois ficheiros (ou copia os exemplos e volta a preencher).
+- **Dois composes:** `docker compose down` **só em `stack/`** derruba MariaDB, API, frontend e Caddy; o **bitcoind** na raiz e o volume **bitcoin-data** mantêm-se.
+- **Nomes Docker:** projecto Compose `stack`; contentores `stack-mariadb`, `stack-backend`, etc. Contentores antigos noutros nomes podem colidir nas portas (**8200**, **5177**, **9080**, **9443**).
+- Rede **`bitcoin-coder-net`** e volumes nomeados (`bitcoin-coder_*`) mantêm compatibilidade com deploys anteriores do mesmo repositório.
+
+## Roadmap (próxima fase)
+
+- Modelos **MariaDB** (`flows` / eventos), endpoints de domínio, fluxo guiado na UI: endereço → pagamento na mempool (ZMQ) → segunda tx `sendrawtransaction` → estados persistidos.

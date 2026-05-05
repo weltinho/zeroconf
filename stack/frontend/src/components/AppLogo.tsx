@@ -1,14 +1,25 @@
+import { useId } from "react";
+
 type AppLogoProps = {
   className?: string;
   "aria-label"?: string;
+  /** `matrix` — verde neon para o tema terminal. */
+  variant?: "default" | "matrix";
 };
 
-/**
- * Marca visual inspirada na identidade bitcoin.org:
- * círculo laranja (#F7931A), símbolo ₿ em branco, palavra-base em alto contraste
- * e ênfase em itálico laranja para “ação / tempo real”.
- */
-export function AppLogo({ className, "aria-label": ariaLabel }: AppLogoProps) {
+/** Wordmark ZeroConf Prop — círculo ₿ + nome. */
+export function AppLogo({
+  className,
+  "aria-label": ariaLabel,
+  variant = "default",
+}: AppLogoProps) {
+  const glowFilterId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const isMx = variant === "matrix";
+  const accent = isMx ? "#39FF14" : "#F7931A";
+  const wordMain = isMx ? "#e8ffe8" : "#f8fafc";
+  const wordItalic = isMx ? "#39FF14" : "#F7931A";
+  const tagline = isMx ? "#6bdc6b" : "#bfdbfe";
+
   return (
     <svg
       className={className}
@@ -17,45 +28,64 @@ export function AppLogo({ className, "aria-label": ariaLabel }: AppLogoProps) {
       role="img"
       aria-label={ariaLabel}
     >
-      <circle cx="28" cy="28" r="26" fill="#F7931A" />
+      {isMx ? (
+        <defs>
+          <filter id={glowFilterId} x="-40%" y="-40%" width="180%" height="180%">
+            <feGaussianBlur stdDeviation="1.2" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+      ) : null}
+      <circle
+        cx="28"
+        cy="28"
+        r={isMx ? 25 : 26}
+        fill={isMx ? "#041004" : accent}
+        stroke={isMx ? accent : "none"}
+        strokeWidth={isMx ? 1.5 : 0}
+        filter={isMx ? `url(#${glowFilterId})` : undefined}
+      />
       <text
         x="28"
         y="36"
         textAnchor="middle"
-        fill="#ffffff"
+        fill={isMx ? accent : "#ffffff"}
         fontSize="26"
         fontWeight="700"
-        fontFamily="system-ui, -apple-system, 'Segoe UI', sans-serif"
+        fontFamily="'Share Tech Mono', ui-monospace, monospace"
       >
         ₿
       </text>
       <text
         x="64"
         y="34"
-        fontFamily="Inter, system-ui, -apple-system, sans-serif"
+        fontFamily="'Share Tech Mono', ui-monospace, monospace"
         fontSize="22"
         fontWeight="700"
       >
-        <tspan fill="#f8fafc">Bitcoin </tspan>
-        <tspan fill="#F7931A" fontStyle="italic">
-          Real Time
+        <tspan fill={wordMain}>ZeroConf </tspan>
+        <tspan fill={wordItalic} fontStyle="italic">
+          Prop
         </tspan>
       </text>
       <text
         x="64"
         y="50"
-        fontFamily="Inter, system-ui, -apple-system, sans-serif"
+        fontFamily="'Share Tech Mono', ui-monospace, monospace"
         fontSize="11"
-        fill="#bfdbfe"
+        fill={tagline}
         fontWeight="600"
         letterSpacing="0.12em"
       >
-        REQUESTS &amp; EVENTS
+        BITCOIN CORE BACKEND
       </text>
       <g transform="translate(498 20)" aria-hidden>
-        <circle className="app-logo-pulse-dot" cx="0" cy="0" r="3" fill="#F7931A" />
-        <circle className="app-logo-pulse-dot" cx="10" cy="0" r="3" fill="#F7931A" />
-        <circle className="app-logo-pulse-dot" cx="20" cy="0" r="3" fill="#F7931A" />
+        <circle className="app-logo-pulse-dot" cx="0" cy="0" r="3" fill={accent} />
+        <circle className="app-logo-pulse-dot" cx="10" cy="0" r="3" fill={accent} />
+        <circle className="app-logo-pulse-dot" cx="20" cy="0" r="3" fill={accent} />
       </g>
     </svg>
   );

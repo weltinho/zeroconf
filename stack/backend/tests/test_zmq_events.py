@@ -39,6 +39,21 @@ def test_to_event_multipart_with_middle_hex_when_trailing_sequence() -> None:
     assert event["middle_hex"] == [b_.hex()]
 
 
+def test_shape_for_operator_hashblock_drops_raw_hex_flood() -> None:
+    raw = {
+        "topic": "hashblock",
+        "payload_hex": "aa" * 32,
+        "sequence": 42,
+    }
+    out = ZmqEventRelay._shape_for_operator(raw)
+    assert out["topic"] == "hashblock"
+    assert out["tipo"] == "resumo_operador"
+    assert out["hash_do_bloco"] == "aa" * 32
+    assert out["sequencia_zmq"] == 42
+    assert "resumo" in out
+    assert "payload_hex" not in out
+
+
 def test_to_event_rest_hex_when_trailing_not_four_bytes() -> None:
     topic = b"x"
     event = ZmqEventRelay._to_event([topic, b"ab", b"cd", b"ef"])

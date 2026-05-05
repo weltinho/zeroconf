@@ -6,6 +6,8 @@ export function resolveLanguage(locale: string): AppLanguage {
   return locale.toLowerCase().startsWith("pt") ? "pt" : "en";
 }
 
-export function getUiText(locale: string): UiText {
-  return UI_TEXT[resolveLanguage(locale)];
+/** Interface sempre em português do Brasil (textos em `UI_TEXT.pt`). */
+export function getUiText(_locale?: string): UiText {
+  void _locale;
+  return UI_TEXT.pt;
 }

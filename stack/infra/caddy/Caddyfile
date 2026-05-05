@@ -15,7 +15,11 @@
 }
 
 :80 {
-	redir https://{host}{uri}
+	# Com Docker mapeia-se host:9080→80 e host:9443→443; o header Host traz "localhost:9080".
+	# Redireccionar para https://{host}{uri} mandaria para a porta errada (HTTPS está em :9443).
+	@hostComPorta header_regexp hp Host ^(.*):(\d+)$
+	redir @hostComPorta https://{re.hp.1}:{$STACK_HTTPS_HOST_PORT}{uri} permanent
+	redir https://{host}:{$STACK_HTTPS_HOST_PORT}{uri} permanent
 }
 
 {$CADDY_SITE_ADDRESSES} {

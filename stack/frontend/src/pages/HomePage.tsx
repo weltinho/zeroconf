@@ -1,40 +1,31 @@
 import { useMemo } from "react";
-import { Link } from "react-router-dom";
-import { AppLogo } from "../components/AppLogo";
 import { getUiText } from "../i18n";
 
 export function HomePage() {
-  const browserLocale = useMemo(() => navigator.language || "unknown", []);
-  const t = useMemo(() => getUiText(browserLocale), [browserLocale]);
+  const t = useMemo(() => getUiText(), []);
 
   return (
-    <main className="layout layout-home">
-      <header className="hero">
-        <div className="hero-brand">
-          <AppLogo className="hero-logo" aria-label={t.logoAriaLabel} />
-          <div className="hero-copy">
-            <h1>{t.homeTitle}</h1>
-            <p>{t.homeSubtitle}</p>
-          </div>
-        </div>
-        <p className="hero-meta">
-          {t.locale}: {browserLocale}
-        </p>
-      </header>
+    <main className="layout layout-home matrix-client">
+      <section className="matrix-hero" aria-labelledby="matrix-hero-title">
+        <h1 id="matrix-hero-title" className="matrix-hero-title">
+          {t.matrixHeroTitle}
+        </h1>
+        <ul className="matrix-hero-bullets">
+          <li>{t.matrixHeroBullet1}</li>
+          <li>{t.matrixHeroBullet2}</li>
+        </ul>
+        <p className="matrix-net-status">{t.matrixNetStatus}</p>
+      </section>
 
-      <section className="home-cards" aria-label="Workspaces">
-        <Link to="/lab/rpc" className="home-card home-card-primary">
-          <h2>{t.cardRpcTitle}</h2>
-          <p>{t.cardRpcDesc}</p>
-          <span className="home-card-cta" aria-hidden="true">
-            →
-          </span>
-        </Link>
-        <div className="home-card home-card-disabled">
-          <h2>{t.cardSoonTitle}</h2>
-          <p>{t.cardSoonDesc}</p>
+      <section className="matrix-client-cards" aria-label="Product">
+        <div className="matrix-card matrix-card-roadmap">
+          <h2>{t.cardRoadmapTitle}</h2>
+          <p>{t.cardRoadmapDesc}</p>
         </div>
       </section>
+
+      <p className="matrix-client-foot">{t.clientFooterOperators}</p>
+      <p className="matrix-locale-hint">{t.localeFixedBr}</p>
     </main>
   );
 }
