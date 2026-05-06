@@ -1,7 +1,10 @@
 """Router para criação e consulta de ordens Boltz (submarine swap).
 
 Fluxo: cliente envia invoice BOLT11 -> obtemos pair/fees -> criamos swap Boltz
--> persistimos swap_orders (provider=boltz) + swap_order_boltz -> retornamos lockup address.
+-> geramos deposit address da nossa wallet -> persistimos swap_orders (provider=boltz)
++ swap_order_boltz -> retornamos nosso deposit address ao cliente.
+O swap_processor detecta o depósito e encaminha exatamente expected_onchain_amount_sat
+para o lockup address da Boltz. O boltz_poller monitora o swap e atualiza o status.
 
 Estados locais Boltz (mapeamento de status_raw -> status em swap_orders):
   - awaiting_deposit      : swap criado, aguardando depósito on-chain
@@ -26,6 +29,8 @@ from app.db import get_session
 from app.models import SwapOrder, SwapOrderBoltz
 from app.settings import settings
 from app.swap_logs import log_swap_step
+from app.bitcoin_rpc import BitcoinRpcClient, BitcoinRpcError
+from app.routers.node import _ensure_wallet_loaded
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +38,17 @@ router = APIRouter(prefix="/client/boltz", tags=["client-boltz"])
 
 # Taxa de serviço cobrada por nós em cima do que a Boltz cobra.
 OUR_FEE_SAT = 1000
+
+# Fee rate padrão para a tx de forward cliente -> Boltz (sat/vB).
+_DEFAULT_FORWARD_FEE_RATE = 3
+
+# Estimativa conservadora de vbytes para tx 1-in/1-out P2WPKH.
+_ESTIMATED_FORWARD_VBYTES = 141
+
+
+def _estimate_forward_fee_sats(fee_rate: int = _DEFAULT_FORWARD_FEE_RATE) -> int:
+    """Estima a taxa de mineração da tx de forward para o lockup Boltz."""
+    return fee_rate * _ESTIMATED_FORWARD_VBYTES
 
 # Mapeamento de status_raw Boltz -> status local enxuto.
 # Referência: https://docs.boltz.exchange/v/api/lifecycle#submarine-swaps
@@ -167,14 +183,35 @@ async def create_boltz_order(
         logger.error("Boltz swap response missing id/address: %s", swap_data)
         raise HTTPException(status_code=502, detail="Incomplete Boltz swap response")
 
-    # 4. Persistir swap_orders (provider=boltz).
+    # 4. Gerar endereço de depósito na nossa wallet (o cliente envia para cá).
+    wallet = settings.bitcoin_operator_wallet.strip()
+    if not wallet:
+        raise HTTPException(status_code=503, detail="Operator wallet not configured")
+    try:
+        await _ensure_wallet_loaded(wallet)
+        rpc = BitcoinRpcClient(settings.bitcoin_rpc_url, settings.bitcoin_rpc_user, settings.bitcoin_rpc_password)
+        our_deposit_address = str(
+            await rpc.call("getnewaddress", [f"boltz-swap-{boltz_swap_id}", "bech32m"], wallet=wallet)
+        )
+    except Exception as exc:
+        logger.error("Failed to generate deposit address: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate deposit address") from exc
+
+    # required_deposit_sats = o que a Boltz espera + nossa taxa + fee estimada da tx de forward.
+    forward_fee_sat = _estimate_forward_fee_sats()
+    required_deposit_sats = expected_onchain_sat + OUR_FEE_SAT + forward_fee_sat
+
+    # 5. Persistir swap_orders:
+    #    - deposit_btc_address = nosso endereço (onde cliente envia)
+    #    - destination_btc_address = lockup address da Boltz (para onde nós encaminhamos)
+    #    - output_sats = expected_onchain_sat (exatamente o que a Boltz espera)
+    #    - required_deposit_sats = o total que cobramos do cliente
     order = SwapOrder(
-        # Boltz cuida do payout; campos internos recebem valores simbólicos.
         output_sats=expected_onchain_sat,
-        destination_btc_address="boltz",
-        deposit_btc_address=lockup_address,
-        required_deposit_sats=expected_onchain_sat,
-        fee_rate_sat_vb=0,
+        destination_btc_address=lockup_address,
+        deposit_btc_address=our_deposit_address,
+        required_deposit_sats=required_deposit_sats,
+        fee_rate_sat_vb=_DEFAULT_FORWARD_FEE_RATE,
         provider="boltz",
         provider_id=boltz_swap_id,
         status="awaiting_deposit",
@@ -190,7 +227,10 @@ async def create_boltz_order(
         {
             "boltz_swap_id": boltz_swap_id,
             "lockup_address": lockup_address,
+            "our_deposit_address": our_deposit_address,
             "expected_onchain_amount_sat": expected_onchain_sat,
+            "required_deposit_sats": required_deposit_sats,
+            "forward_fee_sat": forward_fee_sat,
             "pair_hash": pair_hash,
         },
     )
@@ -216,8 +256,8 @@ async def create_boltz_order(
     return CreateBoltzOrderResponse(
         order_id=order.id,
         status=order.status,
-        deposit_btc_address=lockup_address,
-        expected_onchain_amount_sat=expected_onchain_sat,
+        deposit_btc_address=our_deposit_address,
+        expected_onchain_amount_sat=required_deposit_sats,
         boltz_swap_id=boltz_swap_id,
     )
 

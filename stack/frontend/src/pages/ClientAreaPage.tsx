@@ -42,6 +42,7 @@ type CreateBoltzOrderResponse = {
   deposit_btc_address: string;
   expected_onchain_amount_sat: number;
   boltz_swap_id: string;
+  lockup_tx_id?: string | null;
 };
 
 type GetBoltzOrderResponse = {
@@ -51,6 +52,7 @@ type GetBoltzOrderResponse = {
   deposit_btc_address: string | null;
   expected_onchain_amount_sat: number | null;
   status_raw: string | null;
+  lockup_tx_id: string | null;
 };
 
 type BoltzFees = {
@@ -589,13 +591,13 @@ export function ClientAreaPage() {
                     <button
                       type="button"
                       className="copy-icon-button"
-                      aria-label="Copiar endereço lockup"
+                      aria-label="Copiar endereço de depósito"
                       onClick={() => navigator.clipboard.writeText(boltzLockupAddress)}
                     >⧉</button>
                   </div>
                   <p className="panel-hint">
                     <a href={mempoolAddress(boltzLockupAddress)} target="_blank" rel="noreferrer">
-                      Ver endereço no mempool ↗
+                      Ver endereço de depósito no mempool ↗
                     </a>
                   </p>
                 </>
@@ -603,11 +605,33 @@ export function ClientAreaPage() {
               {boltzStatus === "paid_out" ? (
                 <div className="client-success-box">
                   <p className="client-success-title">Invoice paga com sucesso ⚡</p>
+                  {liveBoltz?.lockup_tx_id && (
+                    <p className="panel-hint">
+                      <a href={mempoolTx(liveBoltz.lockup_tx_id)} target="_blank" rel="noreferrer">
+                        Ver transação de depósito no mempool ↗
+                      </a>
+                    </p>
+                  )}
                 </div>
               ) : boltzStatus === "error" ? (
                 <p className="error">Swap falhou. Tente novamente ou entre em contato.</p>
+              ) : boltzStatus === "deposit_detected" || boltzStatus === "provider_processing" ? (
+                <div>
+                  <p className="panel-hint" style={{ marginBottom: "0.4rem" }}>
+                    {boltzStatus === "deposit_detected"
+                      ? "⏳ Depósito detectado — aguardando confirmação na rede..."
+                      : "⚡ Confirmado — processando pagamento Lightning..."}
+                  </p>
+                  {liveBoltz?.lockup_tx_id && (
+                    <p className="panel-hint">
+                      <a href={mempoolTx(liveBoltz.lockup_tx_id)} target="_blank" rel="noreferrer">
+                        Ver transação de depósito no mempool ↗
+                      </a>
+                    </p>
+                  )}
+                </div>
               ) : (
-                <p className="panel-hint">Status: {boltzStatus}</p>
+                <p className="panel-hint">⏳ Aguardando depósito no endereço acima...</p>
               )}
             </div>
           ) : liveOrder ? (

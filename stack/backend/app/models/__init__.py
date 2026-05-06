@@ -126,6 +126,10 @@ class SwapOrderBoltz(Base):
     refund_pubkey_hex: Mapped[str | None] = mapped_column(String(66), nullable=True)
     refund_privkey_hex: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # TXIDs on-chain do swap: depósito do cliente → lockup Boltz e claim Boltz.
+    lockup_tx_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    claim_tx_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),

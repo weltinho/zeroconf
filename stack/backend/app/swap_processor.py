@@ -353,7 +353,12 @@ class SwapOrderProcessor:
             return
 
         order.payout_txid = str(payout_txid)
-        order.status = "confirming"
+        # Para ordens Boltz, o status pós-forward é gerenciado pelo boltz_poller.
+        # Marcamos apenas que o depósito foi encaminhado; o poller atualiza para paid_out/error.
+        if order.provider == "boltz":
+            order.status = "deposit_detected"
+        else:
+            order.status = "confirming"
         order.last_error = None
         await log_swap_step(
             session,
