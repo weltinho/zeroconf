@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     # Primeiro utilizador admin criado automaticamente se a tabela estiver vazia.
     adm_bootstrap_username: str = "admin"
     adm_bootstrap_password: Optional[str] = None
+
+    # Boltz — integração com submarine swaps (BTC on-chain -> Lightning).
+    # URL base da API Boltz v2 (ex.: https://api.boltz.exchange para mainnet).
+    boltz_base_url: str = "https://api.boltz.exchange"
+    # Timeout HTTP em segundos para chamadas à Boltz.
+    boltz_timeout_sec: int = 20
+    # Feature flag: desativa integração Boltz sem remover código.
+    boltz_enabled: bool = True
     # Endereço reservado para taxa/depósito operacional (índice lógico 0 no painel).
     bitcoin_fee_address_label: str = "fee-index-0"
 

@@ -10,12 +10,14 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://backend:8000",
+       target: "http://backend:8000",
+       // target: "https://zconfcore.duckdns.org/",
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ""),
       },
       "/ws": {
         target: "ws://backend:8000",
+        //target: "wss://zconfcore.duckdns.org/",
         ws: true,
         changeOrigin: true,
       },

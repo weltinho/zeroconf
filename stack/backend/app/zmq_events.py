@@ -1,8 +1,7 @@
 import asyncio
 import contextlib
 import time
-from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, Callable
 
 import zmq
 import zmq.asyncio
@@ -32,7 +31,7 @@ class ZmqEventRelay:
         # Tarefas em voo para filtro wallet-aware de hashtx.
         self._pending_hashtx_tasks: set[asyncio.Task[None]] = set()
         # Callbacks internas (ex.: processadores de domínio) para hashtx relevante.
-        self._hashtx_listeners: set[Callable[[str], Awaitable[None]]] = set()
+        self._hashtx_listeners: set[callable[[str], "asyncio.Future[None]"]] = set()
 
     async def start(self) -> None:
         # Evita iniciar duas vezes e respeita feature flag.
@@ -94,10 +93,10 @@ class ZmqEventRelay:
         async with self._clients_lock:
             self._clients.discard(websocket)
 
-    def add_hashtx_listener(self, listener: Callable[[str], Awaitable[None]]) -> None:
+    def add_hashtx_listener(self, listener: "Callable[[str], asyncio.Future[None]]") -> None:
         self._hashtx_listeners.add(listener)
 
-    def remove_hashtx_listener(self, listener: Callable[[str], Awaitable[None]]) -> None:
+    def remove_hashtx_listener(self, listener: "Callable[[str], asyncio.Future[None]]") -> None:
         self._hashtx_listeners.discard(listener)
 
     async def _run(self) -> None:

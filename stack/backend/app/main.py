@@ -15,6 +15,7 @@ from app.routers import (
     node as node_router,
     swaps_adm as swaps_adm_router,
 )
+from app.routers.client_boltz import router as client_boltz_router
 from app.settings import settings
 from app.swap_processor import SwapOrderProcessor
 
@@ -71,7 +72,31 @@ async def lifespan(app: FastAPI):
 
     zmq_task.add_done_callback(_zmq_done)
 
+    # Boltz poller: monitora ordens ativas periodicamente (apenas se habilitado).
+    boltz_poll_task: asyncio.Task[None] | None = None
+    if settings.boltz_enabled:
+        from app.boltz_poller import run_boltz_poller
+
+        boltz_poll_task = asyncio.create_task(run_boltz_poller())
+
+        def _boltz_poller_done(t: asyncio.Task[None]) -> None:
+            try:
+                t.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                logger.exception("Boltz poller encerrou com erro")
+
+        boltz_poll_task.add_done_callback(_boltz_poller_done)
+
     yield
+
+    if boltz_poll_task is not None:
+        boltz_poll_task.cancel()
+        try:
+            await boltz_poll_task
+        except asyncio.CancelledError:
+            pass
 
     await zmq_relay.stop()
     await rpc.aclose()
@@ -92,6 +117,7 @@ app = FastAPI(
 app.include_router(health.router)
 app.include_router(auth_adm.router)
 app.include_router(client_router.router)
+app.include_router(client_boltz_router)
 app.include_router(node_router.router)
 app.include_router(swaps_adm_router.router)
 app.include_router(events_router.router)

@@ -182,7 +182,7 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     matrixHeroBullet2: "> Capital fino on-chain; swaps externos depois. Liberdade para iterar.",
     matrixNetStatus: "● REDE: Bitcoin Signet — carteira operador",
     clientFooterOperators: "Operadores: [ADM] para painel do nó e admin.",
-    cardToolsTitle: "Consola do nó",
+    cardToolsTitle: "Informações do nó",
     cardToolsDesc: "Estado da cadeia, carteira única do operador, ZMQ leve (bloco / tx).",
     cardRoadmapTitle: "Fluxo guiado (a seguir)",
     cardRoadmapDesc:

@@ -36,6 +36,54 @@ type ClientNetworkResponse = {
   chain: string;
 };
 
+type CreateBoltzOrderResponse = {
+  order_id: number;
+  status: string;
+  deposit_btc_address: string;
+  expected_onchain_amount_sat: number;
+  boltz_swap_id: string;
+};
+
+type GetBoltzOrderResponse = {
+  order_id: number;
+  status: string;
+  boltz_swap_id: string;
+  deposit_btc_address: string | null;
+  expected_onchain_amount_sat: number | null;
+  status_raw: string | null;
+};
+
+type BoltzFees = {
+  percentage: number;
+  miner_fee_sat: number;
+  our_fee_sat: number;
+  min_amount_sat: number;
+  max_amount_sat: number;
+};
+
+/** Extrai o valor em sats da HRP de uma invoice BOLT11 (sem lib externa).
+ *  Formato: ln + rede + [amount][multiplier] + 1 + ...
+ *  Multipliers: m=milli, u=micro, n=nano, p=pico (BTC)
+ */
+function parseBolt11Sats(invoice: string): number | null {
+  const lower = invoice.toLowerCase().trim();
+  const match = lower.match(/^ln(bc|tb|bcrt|tbs)(\d+)([munp])?1/);
+  if (!match) return null;
+  const amount = parseInt(match[2], 10);
+  if (isNaN(amount) || amount <= 0) return null;
+  const multipliers: Record<string, number> = {
+    "": 100_000_000,
+    m: 100_000,
+    u: 100,
+    n: 0.1,
+    p: 0.0001,
+  };
+  const factor = multipliers[match[3] ?? ""];
+  if (factor === undefined) return null;
+  const sats = Math.round(amount * factor);
+  return sats > 0 ? sats : null;
+}
+
 const SATS_PER_BTC = 100_000_000;
 
 function satsToBtc(sats: number): string {
@@ -84,12 +132,19 @@ export function ClientAreaPage() {
   const [unit, setUnit] = useState<"sats" | "btc">("sats");
   const [destination, setDestination] = useState("");
 
+  const [mode, setMode] = useState<"onchain" | "lightning">("onchain");
+  const [invoice, setInvoice] = useState("");
+
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<CreateOrderResponse | null>(null);
   const [order, setOrder] = useState<GetOrderResponse | null>(null);
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
   const [chain, setChain] = useState("main");
+
+  const [boltzCreated, setBoltzCreated] = useState<CreateBoltzOrderResponse | null>(null);
+  const [boltzOrder, setBoltzOrder] = useState<GetBoltzOrderResponse | null>(null);
+  const [boltzFees, setBoltzFees] = useState<BoltzFees | null>(null);
 
   const pollTimerRef = useRef<number | null>(null);
   const initialOrderLoadedRef = useRef(false);
@@ -174,6 +229,23 @@ export function ClientAreaPage() {
   }, []);
 
   useEffect(() => {
+    if (mode !== "lightning") return;
+    let active = true;
+    async function loadFees() {
+      try {
+        const r = await fetch(apiUrl("/client/boltz/fees"));
+        if (!active || !r.ok) return;
+        const body = (await r.json().catch(() => null)) as BoltzFees | null;
+        if (body) setBoltzFees(body);
+      } catch {
+        // sem fees = preview não aparece; não é bloqueante
+      }
+    }
+    void loadFees();
+    return () => { active = false; };
+  }, [mode]);
+
+  useEffect(() => {
     if (initialOrderLoadedRef.current) {
       return;
     }
@@ -191,6 +263,52 @@ export function ClientAreaPage() {
     initialOrderLoadedRef.current = true;
     void pollOrder(parsed);
   }, [params.orderId, pollOrder]);
+
+  const pollBoltzOrder = useCallback(
+    async (orderId: number) => {
+      stopPolling();
+      setError("");
+      try {
+        const r = await fetch(apiUrl(`/client/boltz/orders/${orderId}`));
+        const body = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(body?.detail ?? `HTTP ${r.status}`);
+        setBoltzOrder(body as GetBoltzOrderResponse);
+        const status = String((body as GetBoltzOrderResponse).status || "");
+        if (!["paid_out", "error"].includes(status)) {
+          pollTimerRef.current = window.setTimeout(() => void pollBoltzOrder(orderId), 5000);
+        }
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Erro ao consultar ordem Boltz");
+        pollTimerRef.current = window.setTimeout(() => void pollBoltzOrder(orderId), 5000);
+      }
+    },
+    [stopPolling]
+  );
+
+  async function onCreateBoltz(e: FormEvent) {
+    e.preventDefault();
+    stopPolling();
+    setError("");
+    setBoltzCreated(null);
+    setBoltzOrder(null);
+    setCreating(true);
+    try {
+      const r = await fetch(apiUrl("/client/boltz/orders"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ invoice: invoice.trim() }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(body?.detail ?? `HTTP ${r.status}`);
+      const resp = body as CreateBoltzOrderResponse;
+      setBoltzCreated(resp);
+      void pollBoltzOrder(resp.order_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao criar swap Boltz");
+    } finally {
+      setCreating(false);
+    }
+  }
 
   async function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -235,6 +353,23 @@ export function ClientAreaPage() {
     liveOrder && liveOrder.required_deposit_sats >= liveOrder.output_sats
       ? satsToBtc(liveOrder.required_deposit_sats - liveOrder.output_sats)
       : null;
+
+  const liveBoltz = boltzOrder ?? boltzCreated;
+  const boltzLockupAddress = liveBoltz?.deposit_btc_address ?? null;
+  const boltzExpectedSat = liveBoltz?.expected_onchain_amount_sat ?? null;
+  const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
+  const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
+  const boltzStatusRaw = boltzOrder?.status_raw ?? null;
+  const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
+
+  // Preview ao vivo da invoice — calculado antes de criar o swap.
+  const invoiceSats = useMemo(() => parseBolt11Sats(invoice), [invoice]);
+  const invoicePreview = useMemo(() => {
+    if (!invoiceSats || !boltzFees) return null;
+    const percentFee = Math.ceil((invoiceSats * boltzFees.percentage) / 100);
+    const total = invoiceSats + percentFee + boltzFees.miner_fee_sat + boltzFees.our_fee_sat;
+    return { invoiceSats, percentFee, minerFee: boltzFees.miner_fee_sat, ourFee: boltzFees.our_fee_sat, total };
+  }, [invoiceSats, boltzFees]);
   const isConfirming = order?.status === "confirming";
   const isPaidOut = order?.status === "paid_out";
   const showTrackingLinks = isConfirming || isPaidOut;
@@ -281,61 +416,143 @@ export function ClientAreaPage() {
         <div className="client-hml-left">
           <section className="panel panel-rpc">
             <h2>Criar ordem</h2>
-            {error ? <p className="error">{error}</p> : null}
-            <form onSubmit={onCreate} className="row client-order-form">
-              <label className="client-order-field">
-                <span>Valor</span>
-                <input value={amount} onChange={(e) => setAmount(e.target.value)} />
-              </label>
 
-              <label className="client-order-field client-order-field-unit">
-                <span>Unidade</span>
-                <div className="btc-sats-toggle" role="tablist" aria-label="Unidade de valor">
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={unit === "btc"}
-                    className={unit === "btc" ? "is-active" : ""}
-                    onClick={() => onToggleUnit("btc")}
-                  >
-                    BTC
-                  </button>
-                  <button
-                    type="button"
-                    role="tab"
-                    aria-selected={unit === "sats"}
-                    className={unit === "sats" ? "is-active" : ""}
-                    onClick={() => onToggleUnit("sats")}
-                  >
-                    sats
+            <div className="btc-sats-toggle" role="tablist" aria-label="Tipo de ordem" style={{ marginBottom: "1rem" }}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "onchain"}
+                className={mode === "onchain" ? "is-active" : ""}
+                onClick={() => { setMode("onchain"); setError(""); }}
+              >
+                Envio on-chain
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "lightning"}
+                className={mode === "lightning" ? "is-active" : ""}
+                disabled={chain === "signet"}
+                title={chain === "signet" ? "Swap não disponível em signet" : undefined}
+                onClick={() => { if (chain !== "signet") { setMode("lightning"); setError(""); } }}
+              >
+                Swap ⚡ Lightning
+              </button>
+            </div>
+            {chain === "signet" && (
+              <p className="panel-hint" style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: "var(--color-warning, #f59e0b)" }}>
+                ⚠ Swap Lightning não disponível em signet — use mainnet.
+              </p>
+            )}
+
+            {error ? <p className="error">{error}</p> : null}
+
+            {mode === "onchain" ? (
+              <form onSubmit={onCreate} className="row client-order-form">
+                <label className="client-order-field">
+                  <span>Valor</span>
+                  <input value={amount} onChange={(e) => setAmount(e.target.value)} />
+                </label>
+
+                <label className="client-order-field client-order-field-unit">
+                  <span>Unidade</span>
+                  <div className="btc-sats-toggle" role="tablist" aria-label="Unidade de valor">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={unit === "btc"}
+                      className={unit === "btc" ? "is-active" : ""}
+                      onClick={() => onToggleUnit("btc")}
+                    >
+                      BTC
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={unit === "sats"}
+                      className={unit === "sats" ? "is-active" : ""}
+                      onClick={() => onToggleUnit("sats")}
+                    >
+                      sats
+                    </button>
+                  </div>
+                </label>
+
+                <label className="client-order-field client-order-field-destination">
+                  <span>Endereço final</span>
+                  <input
+                    value={destination}
+                    onChange={(e) => setDestination(e.target.value)}
+                    placeholder="bc1... / tb1..."
+                  />
+                </label>
+
+                <div className="client-order-submit">
+                  <button type="submit" disabled={creating}>
+                    {creating ? "Criando…" : "Criar ordem"}
                   </button>
                 </div>
-              </label>
+              </form>
+            ) : (
+              <form onSubmit={onCreateBoltz} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Invoice BOLT11</span>
+                  <input
+                    value={invoice}
+                    onChange={(e) => setInvoice(e.target.value)}
+                    placeholder="lnbc..."
+                    style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
+                  />
+                </label>
+                <p className="panel-hint" style={{ margin: 0 }}>
+                  Cole a invoice Lightning. Vamos converter seu depósito BTC automaticamente.
+                </p>
 
-              <label className="client-order-field client-order-field-destination">
-                <span>Endereço final</span>
-                <input
-                  value={destination}
-                  onChange={(e) => setDestination(e.target.value)}
-                  placeholder="bc1... / tb1..."
-                />
-              </label>
+                {invoicePreview && (
+                  <div className="panel-hint" style={{ background: "rgba(0,255,70,0.06)", border: "1px solid rgba(0,255,70,0.25)", borderRadius: "6px", padding: "0.75rem 1rem", lineHeight: "1.8", fontFamily: "monospace", fontSize: "0.82rem" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Invoice</span>
+                      <span>{invoicePreview.invoiceSats.toLocaleString()} sats</span>
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span>Taxa do serviço</span>
+                      <span>+{(invoicePreview.percentFee + invoicePreview.minerFee + invoicePreview.ourFee).toLocaleString()} sats</span>
+                    </div>
+                    <hr style={{ border: "none", borderTop: "1px solid rgba(0,255,70,0.2)", margin: "0.4rem 0" }} />
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", fontWeight: "bold", color: invoicePreview.total < (boltzFees?.min_amount_sat ?? 0) ? "#f87171" : "inherit" }}>
+                      <span>Total a depositar</span>
+                      <span>{invoicePreview.total.toLocaleString()} sats ({satsToBtc(invoicePreview.total)} BTC)</span>
+                    </div>
+                    {invoicePreview.total < (boltzFees?.min_amount_sat ?? 0) && (
+                      <p style={{ margin: "0.4rem 0 0", color: "#f87171", fontSize: "0.78rem" }}>
+                        ⚠ Valor abaixo do mínimo ({(boltzFees?.min_amount_sat ?? 0).toLocaleString()} sats)
+                      </p>
+                    )}
+                  </div>
+                )}
 
-              <div className="client-order-submit">
-                <button type="submit" disabled={creating}>
-                  {creating ? "Criando…" : "Criar ordem"}
-                </button>
-              </div>
-            </form>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                  <button type="submit" disabled={creating || !invoice.trim() || (invoicePreview != null && invoicePreview.total < (boltzFees?.min_amount_sat ?? 0))}>
+                    {creating ? "Criando…" : "Criar swap"}
+                  </button>
+                </div>
+              </form>
+            )}
           </section>
 
           <section className="panel panel-rpc">
             <h2>Status técnico (raw)</h2>
-            {!orderId ? (
+            {!orderId && !liveBoltz ? (
               <p className="panel-hint">Crie uma ordem para ver o endereço de depósito.</p>
             ) : (
               <pre className="panel-pre rpc-response-pre">
-                {order ? JSON.stringify(order, null, 2) : created ? JSON.stringify(created, null, 2) : "…"}
+                {liveBoltz
+                  ? JSON.stringify(liveBoltz, null, 2)
+                  : order
+                  ? JSON.stringify(order, null, 2)
+                  : created
+                  ? JSON.stringify(created, null, 2)
+                  : "…"}
               </pre>
             )}
           </section>
@@ -343,9 +560,57 @@ export function ClientAreaPage() {
 
         <section className="panel panel-rpc client-order-card">
           <h2>Ordem</h2>
-          {!liveOrder ? (
+          {!liveOrder && !liveBoltz ? (
             <p className="panel-hint">Sem ordem criada ainda.</p>
-          ) : (
+          ) : liveBoltz ? (
+            <div className="client-order-card-content">
+              <p>
+                Swap Lightning <strong>#{liveBoltz.order_id}</strong>
+              </p>
+              {boltzLockupAddress ? (
+                <>
+                  <div className="client-inline-copy">
+                    <p>
+                      Deposite{" "}
+                      <span className="client-highlight-value">{boltzExpectedBtc} BTC</span>
+                    </p>
+                    <button
+                      type="button"
+                      className="copy-icon-button"
+                      aria-label="Copiar valor"
+                      onClick={() => navigator.clipboard.writeText(boltzExpectedBtc ?? "")}
+                    >⧉</button>
+                  </div>
+                  <div className="client-inline-copy">
+                    <p>
+                      Em{" "}
+                      <span className="client-highlight-address">{boltzLockupAddress}</span>
+                    </p>
+                    <button
+                      type="button"
+                      className="copy-icon-button"
+                      aria-label="Copiar endereço lockup"
+                      onClick={() => navigator.clipboard.writeText(boltzLockupAddress)}
+                    >⧉</button>
+                  </div>
+                  <p className="panel-hint">
+                    <a href={mempoolAddress(boltzLockupAddress)} target="_blank" rel="noreferrer">
+                      Ver endereço no mempool ↗
+                    </a>
+                  </p>
+                </>
+              ) : null}
+              {boltzStatus === "paid_out" ? (
+                <div className="client-success-box">
+                  <p className="client-success-title">Invoice paga com sucesso ⚡</p>
+                </div>
+              ) : boltzStatus === "error" ? (
+                <p className="error">Swap falhou. Tente novamente ou entre em contato.</p>
+              ) : (
+                <p className="panel-hint">Status: {boltzStatus}</p>
+              )}
+            </div>
+          ) : liveOrder ? (
             <div className="client-order-card-content">
               <p>
                 Ordem número <strong>{liveOrder.order_id}</strong>
@@ -431,10 +696,9 @@ export function ClientAreaPage() {
                 <p className="panel-hint">Status atual: {liveOrder.status}</p>
               )}
             </div>
-          )}
+          ) : null}
         </section>
       </div>
     </main>
   );
 }
-
