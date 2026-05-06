@@ -208,6 +208,9 @@ export function NodeToolsPage() {
             <p>{t.nodeDashSubtitle}</p>
           </div>
         </div>
+        <div className="badges">
+          <span className="badge">REDE: {(chain?.chain || "main").toString().toUpperCase()}</span>
+        </div>
         <p className="hero-meta">{t.localeFixedBr}</p>
       </header>
 

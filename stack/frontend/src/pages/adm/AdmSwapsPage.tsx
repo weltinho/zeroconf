@@ -167,6 +167,9 @@ export function AdmSwapsPage() {
           <h1>Trocas</h1>
           <p>Histórico operacional e logs técnicos por ordem.</p>
         </div>
+        <div className="badges">
+          <span className="badge">REDE: {chain.toUpperCase()}</span>
+        </div>
       </header>
 
       <section className="panel panel-rpc">

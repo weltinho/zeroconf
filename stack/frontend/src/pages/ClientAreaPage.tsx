@@ -271,6 +271,9 @@ export function ClientAreaPage() {
             <p>Crie uma ordem: depósito → envio automático</p>
           </div>
         </div>
+        <div className="badges">
+          <span className="badge">REDE: {chain.toUpperCase()}</span>
+        </div>
         <p className="hero-meta">{t.localeFixedBr}</p>
       </header>
 

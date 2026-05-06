@@ -1,0 +1,149 @@
+Uso de ZMQ no projeto (Bitcoin Core -> Backend)
+===============================================
+
+Objetivo deste documento
+------------------------
+Explicar em linguagem direta:
+- em quais tópicos ZMQ estamos inscritos;
+- como usamos isso para detectar depósito de ordem quase em tempo real;
+- como essa detecção imediata acelera o payout;
+- o que acontece com os demais eventos no painel.
+
+
+Resumo direto (ponto principal)
+-------------------------------
+O ZMQ é o gatilho de velocidade do swap.
+
+Quando o cliente publica a transação de depósito na mempool:
+1) o bitcoind emite evento `hashtx`;
+2) nosso relay recebe esse evento na hora;
+3) validamos se a tx toca a carteira do operador (ou seja, a única neste projeto);
+4) casamos o endereço recebido com `deposit_btc_address` da ordem;
+5) iniciamos payout imediatamente (sem esperar bloco).
+
+Sem ZMQ, o sistema dependeria de polling periódico e reagiria mais tarde (que, mais tarde, pode ser implementado como fallback).
+
+
+1) Configuração atual
+---------------------
+
+No `bitcoin.conf`:
+- `zmqpubhashblock=tcp://0.0.0.0:28332`
+- `zmqpubhashtx=tcp://0.0.0.0:28332`
+- `zmqpubrawblock=tcp://0.0.0.0:28332`
+- `zmqpubrawtx=tcp://0.0.0.0:28332`
+- `zmqpubsequence=tcp://0.0.0.0:28332`
+
+No backend (`app/settings.py`):
+- `bitcoin_zmq_topics` (referência ampla): `hashblock,hashtx,rawblock,rawtx,sequence`
+- `bitcoin_zmq_relay_topics` (usado no SUB do relay): `hashblock,hashtx`
+- `zmq_filter_wallet_txs_only=true` por padrão
+
+Conclusão prática:
+- O Bitcoin Core publica vários tópicos.
+- Nosso relay assina e retransmite principalmente `hashblock` e `hashtx`.
+
+
+2) O que cada tópico significa no nosso uso
+-------------------------------------------
+
+2.1 `hashblock`
+- Evento de novo bloco (hash de 32 bytes).
+- Uso:
+  - Vai para WebSocket do painel com resumo enxuto.
+- Valor:
+  - Visibilidade de avanço da chain em tempo real.
+
+2.2 `hashtx`
+- Evento de tx na mempool (txid).
+- Uso:
+  - Passa por filtro wallet-aware: só seguimos com txid que toca a carteira do operador.
+  - Se relevante:
+    - notifica listeners internos (ex.: `SwapOrderProcessor.handle_hashtx`);
+    - envia resumo para o painel.
+- Valor:
+  - Detecta rapidamente que o cliente publicou o depósito da ordem na mempool.
+  - Aciona o fluxo de payout imediatamente após essa publicação.
+  - Evita ruído de transações que não têm relação com nosso wallet.
+
+2.3 `rawtx`, `rawblock`, `sequence`
+- O código tem shape/resumo para esses tópicos, mas o relay principal está focado em
+  `hashblock` e `hashtx`.
+- Valor:
+  - Mantém caminho de evolução se quisermos ampliar monitoramento no futuro.
+
+
+3) Pipeline ZMQ no backend
+--------------------------
+
+Componente: `app/zmq_events.py` (`ZmqEventRelay`)
+
+Passos:
+1. Abre socket SUB em `tcp://<bitcoin_host>:<bitcoin_zmq_port>`.
+2. Assina tópicos configurados em `bitcoin_zmq_relay_topic_list`.
+3. Recebe frames multipart e normaliza para evento interno.
+4. Para `hashtx`:
+   - extrai txid;
+   - aplica filtro wallet-aware com `gettransaction`;
+   - usa cache TTL para não repetir RPC para mesmo txid;
+   - limita concorrência e fila pendente para suportar burst.
+5. Faz broadcast para clientes WebSocket e dispara listeners internos.
+
+Proteções implementadas:
+- `max_pending` para evitar backlog infinito.
+- semáforo de concorrência no filtro.
+- cache de relevância por txid com TTL.
+- fail-closed em erro de RPC/rede.
+- limpeza de clientes WebSocket desconectados.
+
+
+4) Como o ZMQ ajuda no fluxo de swap (foco: depósito da ordem)
+---------------------------------------------------------------
+
+Sem ZMQ:
+- precisaríamos polling agressivo no node/database para detectar depósito.
+- haveria atraso entre a publicação da tx do cliente e nossa reação.
+
+Com ZMQ + filtro wallet-aware:
+- recebemos sinal quase em tempo real quando a tx de depósito entra na mempool;
+- `SwapOrderProcessor` tenta payout automaticamente logo após esse sinal;
+- sistema fica mais responsivo para o cliente;
+- reduz carga de polling e ruído operacional.
+
+Resumo do caminho:
+`bitcoind hashtx` -> `ZmqEventRelay` (filtro wallet-aware) -> `handle_hashtx` ->
+match por `deposit_btc_address` da ordem -> tentativa de payout -> logs/status da ordem.
+
+Em linguagem de produto:
+- cliente publica depósito;
+- backend "fica sabendo na hora";
+- sistema reage rápido e já encaminha a troca.
+
+
+5) Por que esta abordagem foi escolhida
+---------------------------------------
+
+- Reatividade:
+  - evento chega primeiro; ação acontece rápido.
+  - detecção imediata de depósito melhora percepção de velocidade do serviço.
+
+- Eficiência:
+  - só processa tx relevantes da carteira, em vez de tudo que passa na mempool.
+
+- Segurança operacional:
+  - evita decisões de negócio baseadas em evento irrelevante.
+  - mantém controle de carga com limites e cache.
+
+- Observabilidade:
+  - o painel mostra eventos resumidos ao operador.
+  - logs técnicos de swap documentam cada etapa do processamento.
+
+
+6) Pontos de atenção
+--------------------
+
+- Se wallet do operador não estiver carregada/configurada, o filtro de relevância
+  pode ignorar eventos (comportamento fail-closed).
+- Se o endpoint ZMQ mudar (porta/host), relay para de receber até corrigir env.
+- Em volume muito alto de mempool, limites de concorrência/pending são essenciais
+  para preservar estabilidade do backend.

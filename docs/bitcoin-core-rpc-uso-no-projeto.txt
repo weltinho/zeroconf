@@ -1,0 +1,177 @@
+Bitcoin Core RPC em uso no projeto
+==================================
+
+Objetivo deste documento
+------------------------
+Listar os métodos JSON-RPC do Bitcoin Core que o sistema realmente usa hoje
+e explicar por que usamos cada um desse jeito no fluxo.
+
+Contexto rápido
+---------------
+- Backend: FastAPI
+- Integração RPC: cliente interno `app.bitcoin_rpc.BitcoinRpcClient`
+- Carteira principal: `BITCOIN_OPERATOR_WALLET`
+- Regra do swap: gastar apenas UTXOs do depósito do cliente (sem coin selection global)
+
+
+1) Métodos RPC usados no fluxo de swap (cliente + processor)
+-------------------------------------------------------------
+
+1.1 `getnewaddress`
+- Onde:
+  - `app/routers/client.py` (criação da ordem de depósito)
+  - `app/routers/node.py` (`_ensure_fee_address_index0`)
+- Por que:
+  - Gera endereço único por ordem (`swap-order-<id>`) para rastreio claro.
+  - Garante endereço fixo de tesouraria por label (`fee-index-0`) para receber troco.
+- Benefício:
+  - Observabilidade (cada ordem com endereço próprio).
+  - Controle de sobras/troco em endereço operacional dedicado.
+
+1.2 `getmempoolinfo`
+- Onde:
+  - `app/routers/client.py` (quote inicial)
+  - `app/swap_processor.py` (revalidação de fee no momento do payout)
+- Por que:
+  - Lê `mempoolminfee` para evitar fee abaixo do piso atual da rede.
+- Benefício:
+  - Reduz falhas de broadcast por taxa insuficiente.
+
+1.3 `gettransaction`
+- Onde:
+  - `app/swap_processor.py` (`handle_hashtx`)
+  - `app/routers/client.py` (`_refresh_confirmation_if_needed`)
+  - `app/zmq_events.py` (filtro wallet-aware de `hashtx`)
+- Por que:
+  - É wallet-aware: só retorna transações que tocam a carteira.
+  - Permite:
+    - descobrir se um `txid` recebido via ZMQ é relevante para nossa wallet;
+    - identificar endereços recebidos e casar com ordens;
+    - checar confirmações do payout para mover `confirming` -> `paid_out`.
+- Benefício:
+  - Fluxo orientado por eventos reais da carteira, com menos falso positivo.
+
+1.4 `listunspent`
+- Onde:
+  - `app/swap_processor.py` (coleta UTXOs do endereço de depósito)
+  - `app/routers/node.py` (painel de carteira)
+- Por que:
+  - Seleciona explicitamente os UTXOs do endereço da ordem.
+  - Recalcula suficiência (output + fee dinâmica) antes de montar transação.
+- Benefício:
+  - Garante isolamento por ordem (sem usar fundos de outros UTXOs da wallet).
+
+1.5 `walletcreatefundedpsbt`
+- Onde:
+  - `app/swap_processor.py`
+- Por que:
+  - Cria PSBT com inputs pré-selecionados e opções controladas:
+    - `add_inputs: false` (não puxar outros inputs automaticamente)
+    - `lockUnspents: true` (evitar corrida/reuso de UTXO)
+    - `changeAddress: fee-index-0` (troco na tesouraria)
+    - `fee_rate` explícita
+- Benefício:
+  - Controle total da origem dos inputs e destino do troco.
+
+1.6 `walletprocesspsbt`
+- Onde:
+  - `app/swap_processor.py`
+- Por que:
+  - Assina a PSBT com as chaves da carteira antes do `finalizepsbt`.
+- Benefício:
+  - Evita erro de finalize em PSBT incompleta/não assinada.
+
+1.7 `finalizepsbt`
+- Onde:
+  - `app/swap_processor.py`
+- Por que:
+  - Finaliza PSBT e gera hex raw pronta para broadcast.
+- Benefício:
+  - Fecha pipeline PSBT em etapas auditáveis.
+
+1.8 `sendrawtransaction`
+- Onde:
+  - `app/swap_processor.py`
+- Por que:
+  - Faz broadcast explícito da transação final.
+- Benefício:
+  - Retorna `txid` de payout para rastreio e status.
+
+1.9 `lockunspent`
+- Onde:
+  - `app/swap_processor.py` (unlock best-effort em falha)
+- Por que:
+  - Em falhas no pipeline de PSBT, libera UTXOs que ficaram lockados.
+- Benefício:
+  - Evita “UTXO preso” e permite nova tentativa do fluxo.
+
+
+2) Métodos RPC usados para bootstrap/estado da carteira do operador
+-------------------------------------------------------------------
+
+2.1 `listwallets`
+2.2 `loadwallet`
+2.3 `createwallet`
+2.4 `getwalletinfo`
+- Onde:
+  - `app/routers/node.py` (`_ensure_wallet_loaded`, `node_wallet`)
+- Por que:
+  - Garantir que a carteira do operador exista e esteja carregada.
+- Benefício:
+  - Menos erro operacional no startup e no painel admin.
+
+2.5 `getaddressesbylabel`
+- Onde:
+  - `app/routers/node.py` (`_ensure_fee_address_index0`)
+- Por que:
+  - Reusar o endereço fixo de tesouraria por label.
+- Benefício:
+  - Consistência no destino do troco (acúmulo controlado).
+
+2.6 `listreceivedbyaddress`
+- Onde:
+  - `app/routers/node.py` (painel admin)
+- Por que:
+  - Mostrar visão de recebimentos por endereço no dashboard.
+- Benefício:
+  - Operação mais transparente para suporte e auditoria.
+
+
+3) Métodos RPC usados para estado de rede
+-----------------------------------------
+
+3.1 `getblockchaininfo`
+- Onde:
+  - `app/routers/node.py` (`/adm/node/chain`)
+  - `app/routers/client.py` (`/client/network`)
+- Por que:
+  - Fonte de verdade da chain real (`main`, `signet`, etc.).
+- Benefício:
+  - Frontend ajusta links/mensagens por rede automaticamente.
+
+
+4) Por que escolhemos esse desenho (resumo arquitetural)
+---------------------------------------------------------
+
+- Segurança e previsibilidade no swap:
+  - PSBT em etapas + `add_inputs: false` evita gastar fundos errados.
+  - `changeAddress` fixo direciona sobras para tesouraria controlada.
+
+- Robustez operacional:
+  - Fee dinâmica considera piso do mempool.
+  - Unlock de UTXO em erro evita bloqueios persistentes.
+
+- Observabilidade:
+  - Logs por etapa (`swap_order_logs`) e status transicional (`confirming`).
+  - `gettransaction` wallet-aware melhora rastreio de depósito/payout.
+
+- UX adaptável por ambiente:
+  - Chain detectada via RPC, sem hardcode de signet/mainnet na interface.
+
+
+5) Notas práticas
+-----------------
+- Se trocar rede (signet/main), o backend deve apontar para o node correto e
+  o frontend passa a refletir a chain via `/client/network`.
+- Exposição remota de RPC (se feita) deve sempre ter camadas de proteção
+  adicionais (auth forte, ACL, TLS e preferencialmente acesso restrito).
