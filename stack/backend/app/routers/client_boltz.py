@@ -229,6 +229,7 @@ class GetBoltzOrderResponse(BaseModel):
     deposit_btc_address: str | None
     expected_onchain_amount_sat: int | None
     status_raw: str | None
+    lockup_tx_id: str | None = None
 
 
 @router.get("/orders/{order_id}", response_model=GetBoltzOrderResponse)
@@ -253,6 +254,15 @@ async def get_boltz_order(
     )
     boltz = result_boltz.scalar_one_or_none()
 
+    # Extrai o ID da transação on-chain do payload mais recente da Boltz.
+    lockup_tx_id: str | None = None
+    if boltz and boltz.last_payload_json:
+        try:
+            payload = json.loads(boltz.last_payload_json)
+            lockup_tx_id = payload.get("transaction", {}).get("id") or None
+        except Exception:
+            pass
+
     return GetBoltzOrderResponse(
         order_id=order.id,
         status=order.status,
@@ -260,4 +270,5 @@ async def get_boltz_order(
         deposit_btc_address=boltz.lockup_address if boltz else None,
         expected_onchain_amount_sat=boltz.expected_onchain_amount_sat if boltz else None,
         status_raw=boltz.status_raw if boltz else None,
+        lockup_tx_id=lockup_tx_id,
     )
