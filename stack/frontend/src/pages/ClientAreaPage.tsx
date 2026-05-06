@@ -32,6 +32,10 @@ type OrderLogEntry = {
   created_at: string;
 };
 
+type ClientNetworkResponse = {
+  chain: string;
+};
+
 const SATS_PER_BTC = 100_000_000;
 
 function satsToBtc(sats: number): string {
@@ -85,6 +89,7 @@ export function ClientAreaPage() {
   const [created, setCreated] = useState<CreateOrderResponse | null>(null);
   const [order, setOrder] = useState<GetOrderResponse | null>(null);
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
+  const [chain, setChain] = useState("main");
 
   const pollTimerRef = useRef<number | null>(null);
   const initialOrderLoadedRef = useRef(false);
@@ -144,6 +149,29 @@ export function ClientAreaPage() {
   useEffect(() => {
     return () => stopPolling();
   }, [stopPolling]);
+
+  useEffect(() => {
+    let active = true;
+    async function loadNetwork() {
+      try {
+        const r = await fetch(apiUrl("/client/network"));
+        const body = (await r.json().catch(() => ({}))) as Partial<ClientNetworkResponse>;
+        if (!active || !r.ok) {
+          return;
+        }
+        const value = String(body.chain || "").trim().toLowerCase();
+        if (value) {
+          setChain(value);
+        }
+      } catch {
+        // fallback permanece "main"
+      }
+    }
+    void loadNetwork();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (initialOrderLoadedRef.current) {
@@ -211,8 +239,9 @@ export function ClientAreaPage() {
   const isPaidOut = order?.status === "paid_out";
   const showTrackingLinks = isConfirming || isPaidOut;
   const payoutTxid = order?.payout_txid ?? null;
-  const signetMempoolTx = (txid: string) => `https://mempool.space/signet/tx/${txid}`;
-  const signetMempoolAddress = (address: string) => `https://mempool.space/signet/address/${address}`;
+  const mempoolBase = chain === "main" ? "https://mempool.space" : `https://mempool.space/${chain}`;
+  const mempoolTx = (txid: string) => `${mempoolBase}/tx/${txid}`;
+  const mempoolAddress = (address: string) => `${mempoolBase}/address/${address}`;
 
   function onToggleUnit(next: "btc" | "sats") {
     if (next === unit) {
@@ -359,25 +388,25 @@ export function ClientAreaPage() {
                       ? "Aguardando confirmação da transação de payout"
                       : "Transação de payout confirmada"}
                   </p>
-                  <p className="panel-hint">Acompanhe no mempool (rede signet):</p>
+                  <p className="panel-hint">Acompanhe no mempool (rede {chain}):</p>
                   <ul className="client-links-list">
                     {depositTxid ? (
                       <li>
-                        <a href={signetMempoolTx(depositTxid)} target="_blank" rel="noreferrer">
+                        <a href={mempoolTx(depositTxid)} target="_blank" rel="noreferrer">
                           Transação de depósito <span className="external-link-icon">↗</span>
                         </a>
                       </li>
                     ) : null}
                     {payoutTxid ? (
                       <li>
-                        <a href={signetMempoolTx(payoutTxid)} target="_blank" rel="noreferrer">
+                        <a href={mempoolTx(payoutTxid)} target="_blank" rel="noreferrer">
                           Transação de payout <span className="external-link-icon">↗</span>
                         </a>
                       </li>
                     ) : null}
                     <li>
                       <a
-                        href={signetMempoolAddress(liveOrder.deposit_btc_address)}
+                        href={mempoolAddress(liveOrder.deposit_btc_address)}
                         target="_blank"
                         rel="noreferrer"
                       >
@@ -385,7 +414,7 @@ export function ClientAreaPage() {
                       </a>
                     </li>
                     <li>
-                      <a href={signetMempoolAddress(destinationDisplay)} target="_blank" rel="noreferrer">
+                      <a href={mempoolAddress(destinationDisplay)} target="_blank" rel="noreferrer">
                         Endereço de destino <span className="external-link-icon">↗</span>
                       </a>
                     </li>

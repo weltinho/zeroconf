@@ -275,3 +275,22 @@ async def get_order_logs(order_id: int, session: AsyncSession = Depends(get_sess
         for r in rows
     ]
 
+
+class ClientNetworkResponse(BaseModel):
+    chain: str
+
+
+@router.get("/network", response_model=ClientNetworkResponse)
+async def get_client_network() -> Any:
+    chain = (settings.bitcoin_network or "main").strip().lower()
+    try:
+        info = await rpc.call("getblockchaininfo")
+        if isinstance(info, dict):
+            rpc_chain = str(info.get("chain") or "").strip().lower()
+            if rpc_chain:
+                chain = rpc_chain
+    except Exception:
+        # Best effort: fallback para config local se RPC estiver indisponível.
+        pass
+    return ClientNetworkResponse(chain=chain)
+

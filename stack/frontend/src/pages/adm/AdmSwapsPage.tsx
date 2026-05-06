@@ -25,6 +25,10 @@ type OrderLogRow = {
   created_at: string;
 };
 
+type ClientNetworkResponse = {
+  chain: string;
+};
+
 function satsToBtc(sats: number): string {
   return (sats / 100_000_000).toFixed(8);
 }
@@ -40,12 +44,16 @@ function formatDateBrCompact(value: string): string {
   return `${dd}/${mm} ${hh}:${mi}:${ss}`;
 }
 
-function signetTx(txid: string): string {
-  return `https://mempool.space/signet/tx/${txid}`;
+function mempoolBase(chain: string): string {
+  return chain === "main" ? "https://mempool.space" : `https://mempool.space/${chain}`;
 }
 
-function signetAddress(address: string): string {
-  return `https://mempool.space/signet/address/${address}`;
+function mempoolTx(chain: string, txid: string): string {
+  return `${mempoolBase(chain)}/tx/${txid}`;
+}
+
+function mempoolAddress(chain: string, address: string): string {
+  return `${mempoolBase(chain)}/address/${address}`;
 }
 
 export function AdmSwapsPage() {
@@ -59,6 +67,7 @@ export function AdmSwapsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [chain, setChain] = useState("main");
 
   async function loadOrders() {
     setLoading(true);
@@ -97,6 +106,29 @@ export function AdmSwapsPage() {
 
   useEffect(() => {
     void loadOrders();
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    async function loadNetwork() {
+      try {
+        const r = await fetch(apiUrl("/client/network"));
+        const b = (await r.json().catch(() => ({}))) as Partial<ClientNetworkResponse>;
+        if (!active || !r.ok) {
+          return;
+        }
+        const value = String(b.chain || "").trim().toLowerCase();
+        if (value) {
+          setChain(value);
+        }
+      } catch {
+        // fallback main
+      }
+    }
+    void loadNetwork();
+    return () => {
+      active = false;
+    };
   }, []);
 
   const filteredOrders = useMemo(() => {
@@ -205,7 +237,7 @@ export function AdmSwapsPage() {
                         {o.deposit_txid ? (
                           <a
                             className="adm-link-mono"
-                            href={signetTx(o.deposit_txid)}
+                            href={mempoolTx(chain, o.deposit_txid)}
                             target="_blank"
                             rel="noreferrer"
                           >
@@ -219,7 +251,7 @@ export function AdmSwapsPage() {
                         {o.payout_txid ? (
                           <a
                             className="adm-link-mono"
-                            href={signetTx(o.payout_txid)}
+                            href={mempoolTx(chain, o.payout_txid)}
                             target="_blank"
                             rel="noreferrer"
                           >
@@ -232,7 +264,7 @@ export function AdmSwapsPage() {
                       <td title={o.deposit_btc_address}>
                         <a
                           className="adm-link-mono"
-                          href={signetAddress(o.deposit_btc_address)}
+                          href={mempoolAddress(chain, o.deposit_btc_address)}
                           target="_blank"
                           rel="noreferrer"
                         >
@@ -242,7 +274,7 @@ export function AdmSwapsPage() {
                       <td title={o.destination_btc_address}>
                         <a
                           className="adm-link-mono"
-                          href={signetAddress(o.destination_btc_address)}
+                          href={mempoolAddress(chain, o.destination_btc_address)}
                           target="_blank"
                           rel="noreferrer"
                         >
