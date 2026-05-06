@@ -62,6 +62,7 @@ export function AdmGateLayout() {
         logoAria={t.logoAriaLabel}
         navConsole={t.admNavConsole}
         navNode={t.admNavNode}
+        navSwaps={t.admNavSwaps}
         navPublic={t.admNavPublic}
         logoutLabel={t.admLogout}
         onLogout={() => void handleLogout()}

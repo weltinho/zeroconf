@@ -20,6 +20,13 @@ export function AdmHomePage() {
             →
           </span>
         </Link>
+        <Link to="/adm/swaps" className="matrix-card matrix-card-link">
+          <h2>Histórico de trocas</h2>
+          <p>Ordens, estados e logs técnicos do fluxo de swap.</p>
+          <span className="matrix-card-cta" aria-hidden>
+            →
+          </span>
+        </Link>
       </section>
     </main>
   );

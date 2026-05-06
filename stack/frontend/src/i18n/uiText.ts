@@ -31,6 +31,7 @@ export type UiText = {
   admHomeSubtitle: string;
   admNavConsole: string;
   admNavNode: string;
+  admNavSwaps: string;
   admNavPublic: string;
   admLogout: string;
   nodeToolsNav: string;
@@ -115,6 +116,7 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
       "Operator-facing tools. End users stay on the public surface.",
     admNavConsole: "HOME",
     admNavNode: "NODE",
+    admNavSwaps: "SWAPS",
     admNavPublic: "Public site",
     admLogout: "LOCK_SESSION",
     nodeToolsNav: "NODE",
@@ -202,6 +204,7 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
       "Ferramentas do operador. Utilizadores finais ficam na área pública.",
     admNavConsole: "INÍCIO",
     admNavNode: "NODE",
+    admNavSwaps: "SWAPS",
     admNavPublic: "Site público",
     admLogout: "BLOQUEAR_SESSÃO",
     nodeToolsNav: "NODE",

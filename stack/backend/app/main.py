@@ -7,8 +7,16 @@ from fastapi import FastAPI
 
 from app.bitcoin_rpc import BitcoinRpcError
 from app.deps import rpc, zmq_relay
-from app.routers import auth_adm, events as events_router, health, node as node_router
+from app.routers import (
+    auth_adm,
+    client as client_router,
+    events as events_router,
+    health,
+    node as node_router,
+    swaps_adm as swaps_adm_router,
+)
 from app.settings import settings
+from app.swap_processor import SwapOrderProcessor
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +53,12 @@ async def lifespan(app: FastAPI):
             logger.exception("dispose_engine após falha de BD")
 
     # ZMQ em task paralela: não atrasa o primeiro `yield` (bind HTTP / aceitar pedidos).
+    # Também registra processadores internos (ex.: swap orders) no stream hashtx.
+    try:
+        zmq_relay.add_hashtx_listener(SwapOrderProcessor(rpc).handle_hashtx)
+    except Exception:
+        logger.exception("Falha ao registrar SwapOrderProcessor no relay ZMQ")
+
     zmq_task = asyncio.create_task(zmq_relay.start())
 
     def _zmq_done(t: asyncio.Task[None]) -> None:
@@ -77,7 +91,9 @@ app = FastAPI(
 
 app.include_router(health.router)
 app.include_router(auth_adm.router)
+app.include_router(client_router.router)
 app.include_router(node_router.router)
+app.include_router(swaps_adm_router.router)
 app.include_router(events_router.router)
 
 # Re-export for tests and monkeypatching (same objects as app.deps).

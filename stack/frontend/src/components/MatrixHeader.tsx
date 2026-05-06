@@ -13,6 +13,7 @@ type Props =
       logoAria: string;
       navConsole: string;
       navNode: string;
+      navSwaps: string;
       navPublic: string;
       logoutLabel: string;
       onLogout: () => void;
@@ -51,6 +52,9 @@ export function MatrixHeader(props: Props) {
         </Link>
         <Link to="/adm/node" className="matrix-nav-link">
           [{props.navNode}]
+        </Link>
+        <Link to="/adm/swaps" className="matrix-nav-link">
+          [{props.navSwaps}]
         </Link>
       </nav>
       <div className="matrix-header-actions">

@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import time
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import zmq
@@ -30,6 +31,8 @@ class ZmqEventRelay:
         self._tx_filter_sem = asyncio.Semaphore(settings.zmq_wallet_filter_max_concurrency)
         # Tarefas em voo para filtro wallet-aware de hashtx.
         self._pending_hashtx_tasks: set[asyncio.Task[None]] = set()
+        # Callbacks internas (ex.: processadores de domínio) para hashtx relevante.
+        self._hashtx_listeners: set[Callable[[str], Awaitable[None]]] = set()
 
     async def start(self) -> None:
         # Evita iniciar duas vezes e respeita feature flag.
@@ -91,6 +94,12 @@ class ZmqEventRelay:
         async with self._clients_lock:
             self._clients.discard(websocket)
 
+    def add_hashtx_listener(self, listener: Callable[[str], Awaitable[None]]) -> None:
+        self._hashtx_listeners.add(listener)
+
+    def remove_hashtx_listener(self, listener: Callable[[str], Awaitable[None]]) -> None:
+        self._hashtx_listeners.discard(listener)
+
     async def _run(self) -> None:
         # Sem socket ativo, não há o que consumir.
         if not self._socket:
@@ -118,6 +127,14 @@ class ZmqEventRelay:
         is_relevant = await self._is_wallet_relevant_txid(txid)
         if not is_relevant:
             return
+        # Notifica listeners internos (best effort; não deve derrubar relay).
+        if self._hashtx_listeners:
+            for listener in list(self._hashtx_listeners):
+                try:
+                    asyncio.create_task(listener(txid))
+                except Exception:
+                    # Listener mal comportado não deve quebrar o relay.
+                    pass
         event = self._shape_for_operator(raw)
         await self._broadcast(event)
 
