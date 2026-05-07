@@ -12,6 +12,7 @@ type CreateOrderResponse = {
   required_deposit_sats: number;
   output_sats: number;
   fee_rate_sat_vb: number;
+  provider?: string;
 };
 
 type GetOrderResponse = {
@@ -23,6 +24,7 @@ type GetOrderResponse = {
   destination_btc_address: string;
   payout_txid: string | null;
   last_rpc_status: string | null;
+  provider?: string;
 };
 
 type OrderLogEntry = {
@@ -233,6 +235,7 @@ export function ClientAreaPage() {
   const [comprasPhone, setComprasPhone] = useState("");
   const [bitrefillLoading, setBitrefillLoading] = useState(false);
   const [bitrefillError, setBitrefillError] = useState<string | null>(null);
+  const [comprasSubmitting, setComprasSubmitting] = useState(false);
 
   const pollTimerRef = useRef<number | null>(null);
   const initialOrderLoadedRef = useRef(false);
@@ -517,6 +520,49 @@ export function ClientAreaPage() {
     }
   }
 
+  async function onCreateCompras() {
+    if (chain === "signet") return;
+    stopPolling();
+    setError("");
+    setBoltzCreated(null);
+    setBoltzOrder(null);
+    setComprasSubmitting(true);
+    try {
+      const r = await fetch(apiUrl("/client/bitrefill/orders"), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          product_id: comprasProductId,
+          package_id: comprasPackageId || "",
+          customer_email: comprasEmail.trim(),
+          phone_number: comprasNeedsPhone ? comprasPhone.trim() : "",
+          country: comprasCountryCode,
+        }),
+      });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail = body?.detail;
+        const msg =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((e: { msg?: string }) => e.msg ?? "").filter(Boolean).join("; ") ||
+                `HTTP ${r.status}`
+              : `HTTP ${r.status}`;
+        throw new Error(msg);
+      }
+      const resp = body as CreateOrderResponse;
+      setCreated(resp);
+      setOrder(null);
+      setDepositTxid(null);
+      void pollOrder(resp.order_id);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Erro ao criar compra Bitrefill");
+    } finally {
+      setComprasSubmitting(false);
+    }
+  }
+
   const orderId = created?.order_id ?? order?.order_id ?? null;
   const liveOrder = order ?? created;
   const requiredBtc = liveOrder ? satsToBtc(liveOrder.required_deposit_sats) : null;
@@ -528,6 +574,9 @@ export function ClientAreaPage() {
     liveOrder && liveOrder.required_deposit_sats >= liveOrder.output_sats
       ? satsToBtc(liveOrder.required_deposit_sats - liveOrder.output_sats)
       : null;
+
+  const isBitrefillOrder =
+    (order?.provider ?? created?.provider) === "bitrefill";
 
   const liveBoltz = boltzOrder ?? boltzCreated;
   const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
@@ -766,8 +815,9 @@ export function ClientAreaPage() {
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                 <p className="panel-hint" style={{ margin: 0 }}>
-                  Catálogo via API Bitrefill. País por defeito Brasil; em seguida ordem com depósito BTC —
-                  por agora só navegação do catálogo.
+                  Escolha produto e valor ou pacote, confirme o e-mail e use <strong>Comprar</strong> para obter aqui um
+                  endereço de depósito na nossa rede. O montante pode incluir colchão para taxas da rede e oscilações
+                  até criarmos a invoice Bitrefill no momento em que detectarmos o pagamento.
                 </p>
                 {bitrefillError ? <p className="error">{bitrefillError}</p> : null}
 
@@ -873,6 +923,27 @@ export function ClientAreaPage() {
                   />
                 </label>
 
+                <div className="client-order-submit">
+                  <button
+                    type="button"
+                    disabled={
+                      comprasSubmitting ||
+                      creating ||
+                      bitrefillLoading ||
+                      chain === "signet" ||
+                      !comprasProductId ||
+                      !comprasEmail.trim() ||
+                      (comprasNeedsPhone ? !comprasPhone.trim() : false) ||
+                      (comprasSelectedProduct?.range &&
+                        (comprasSelectedProduct.packages?.length ?? 0) === 0) ||
+                      ((comprasSelectedProduct?.packages?.length ?? 0) > 0 && !comprasPackageId)
+                    }
+                    onClick={() => void onCreateCompras()}
+                  >
+                    {comprasSubmitting ? "A gerar…" : "Comprar e obter endereço de depósito"}
+                  </button>
+                </div>
+
                 {bitrefillLoading ? <p className="panel-hint" style={{ margin: 0 }}>A atualizar catálogo…</p> : null}
               </div>
             )}
@@ -896,6 +967,13 @@ export function ClientAreaPage() {
                       telefone: comprasNeedsPhone ? comprasPhone || null : undefined,
                     },
                     catálogo_carregado: comprasProducts.length,
+                    ordem_loja: orderId
+                      ? {
+                          order_id: orderId,
+                          provider: order?.provider ?? created?.provider ?? null,
+                          status: order?.status ?? created?.status ?? null,
+                        }
+                      : null,
                   },
                   null,
                   2,
@@ -1064,7 +1142,15 @@ export function ClientAreaPage() {
           ) : liveOrder ? (
             <div className="client-order-card-content">
               <p>
-                Ordem número <strong>{liveOrder.order_id}</strong>
+                {isBitrefillOrder ? (
+                  <>
+                    Compra Bitrefill <strong>#{liveOrder.order_id}</strong>
+                  </>
+                ) : (
+                  <>
+                    Ordem número <strong>{liveOrder.order_id}</strong>
+                  </>
+                )}
               </p>
               <div className="client-inline-copy">
                 <p>
@@ -1098,17 +1184,29 @@ export function ClientAreaPage() {
               <div style={{ margin: "0.75rem 0" }}>
                 <AddressQRCode value={liveOrder.deposit_btc_address} size={160} />
               </div>
-              <p className="panel-hint">
-                Você receberá <span className="client-highlight-value">{outputBtc} BTC</span> em{" "}
-                <span className="client-highlight-address">{destinationDisplay}</span> e pagará{" "}
-                <span className="client-highlight-value">{feeBtc} BTC</span> de taxas.
-              </p>
+              {isBitrefillOrder ? (
+                <p className="panel-hint">
+                  Depósito único em BTC: inclui produto Bitrefill, rede e margem de cotação. Quando detectarmos pagamento,
+                  criamos a invoice crypto na Bitrefill e enviamos o montante exigido pelo fornecedor; seguimento pelo
+                  e-mail indicado na compra.
+                </p>
+              ) : (
+                <p className="panel-hint">
+                  Você receberá <span className="client-highlight-value">{outputBtc} BTC</span> em{" "}
+                  <span className="client-highlight-address">{destinationDisplay}</span> e pagará{" "}
+                  <span className="client-highlight-value">{feeBtc} BTC</span> de taxas.
+                </p>
+              )}
               {showTrackingLinks ? (
                 <div className="client-success-box">
                   <p className="client-success-title">
-                    {isConfirming
-                      ? "Aguardando confirmação da transação de payout"
-                      : "Transação de payout confirmada"}
+                    {isBitrefillOrder
+                      ? isConfirming
+                        ? "Aguardando confirmação do envio à Bitrefill"
+                        : "Envio à Bitrefill confirmado na rede"
+                      : isConfirming
+                        ? "Aguardando confirmação da transação de payout"
+                        : "Transação de payout confirmada"}
                   </p>
                   <p className="panel-hint">Acompanhe no mempool (rede {chain}):</p>
                   <ul className="client-links-list">

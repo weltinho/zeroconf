@@ -118,6 +118,19 @@ async def bitrefill_list_products(
     return await _request("GET", "/products", params=params, transport=transport)
 
 
+async def bitrefill_get_product(
+    product_id: str,
+    *,
+    transport: Optional[httpx.BaseTransport] = None,
+) -> dict[str, Any]:
+    """GET /products/{id} — detalhes e pacotes com preço de referência."""
+
+    pid = product_id.strip()
+    if not pid:
+        raise BitrefillClientError("product_id vazio")
+    return await _request("GET", f"/products/{pid}", transport=transport)
+
+
 async def bitrefill_create_invoice(
     body: dict[str, Any],
     *,

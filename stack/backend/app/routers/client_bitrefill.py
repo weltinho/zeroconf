@@ -6,12 +6,28 @@ Proxies leituras à API Bitrefill; respostas já normalizadas para o frontend (s
 from __future__ import annotations
 
 import logging
+from decimal import Decimal
 from typing import Any, Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, EmailStr, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.bitrefill_client import BitrefillClientError, bitrefill_list_products
+from app.bitrefill_client import BitrefillClientError, bitrefill_get_product, bitrefill_list_products
+from app.db import get_session
+from app.deps import rpc
+from app.models import SwapOrder, SwapOrderBitrefill
+from app.routers.client import CreateOrderResponse
+from app.routers.node import _ensure_wallet_loaded
 from app.settings import settings
+from app.swap_logs import log_swap_step
+from app.swap_processor import (
+    DEFAULT_SWAP_FEE_RATE_SAT_VB,
+    MIN_SWAP_FEE_SATS,
+    _btc_kvb_to_sat_vb_ceil,
+    _estimate_fee_sats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,3 +212,238 @@ async def catalog_products(
         "products": normalized,
         "meta": meta_out,
     }
+
+
+PLACEHOLDER_BITREFILL_DESTINATION = "BITREFILL_PENDING"
+
+
+async def _chain_is_signet_rpc() -> bool:
+    """Signet pelo Core (mais fiável que env sozinha quando zmq já viu rede)."""
+
+    try:
+        info = await rpc.call("getblockchaininfo")
+        if isinstance(info, dict):
+            return str(info.get("chain") or "").lower() == "signet"
+    except Exception:
+        pass
+    return (settings.bitcoin_network or "").strip().lower() == "signet"
+
+
+def _extract_package_quote_sats(sel: dict[str, Any]) -> int | None:
+    raw = sel.get("price")
+    if raw is None:
+        return None
+    try:
+        return max(0, int(Decimal(str(raw)).to_integral_value(rounding="ROUND_HALF_UP")))
+    except Exception:
+        return None
+
+
+class BitrefillCreateOrderRequest(BaseModel):
+    product_id: str = Field(..., min_length=1, max_length=128)
+    package_id: str = Field("", max_length=384)
+    customer_email: EmailStr
+    phone_number: str = Field("", max_length=48)
+    country: str = Field("BR", min_length=2, max_length=2)
+
+
+@router.post("/orders", response_model=CreateOrderResponse)
+async def bitrefill_create_order(
+    req: BitrefillCreateOrderRequest,
+    session: AsyncSession = Depends(get_session),
+) -> Any:
+    """Abre uma ordem: depósito à nossa wallet; após pagamento criamos invoice Bitrefill e pagamos.
+
+    Fluxo técnico: ver ``swap_processor._ensure_bitrefill_invoice``.
+    """
+
+    _require_bitrefill()
+    if await _chain_is_signet_rpc():
+        raise HTTPException(
+            status_code=503,
+            detail="Compras Bitrefill indisponíveis em signet — use rede main.",
+        )
+
+    wallet = settings.bitcoin_operator_wallet.strip()
+    if not wallet:
+        raise HTTPException(
+            status_code=503,
+            detail="operator wallet not configured (BITCOIN_OPERATOR_WALLET)",
+        )
+
+    cc = req.country.strip().upper()
+    if len(cc) != 2:
+        raise HTTPException(status_code=422, detail="country inválido (ISO-alpha-2)")
+
+    try:
+        prod_raw = await bitrefill_get_product(req.product_id.strip())
+    except BitrefillClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    body = prod_raw.get("data") if isinstance(prod_raw, dict) else None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=502, detail="produto Bitrefill inválido")
+
+    pcode = str(body.get("country_code") or "").strip().upper()
+    if pcode and pcode != cc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"produto é do país {pcode}, não {cc}",
+        )
+    if not bool(body.get("in_stock")):
+        raise HTTPException(status_code=400, detail="produto indisponível")
+
+    rng = body.get("range")
+    pkgs = body.get("packages") if isinstance(body.get("packages"), list) else []
+    pkg_id_needle = req.package_id.strip()
+
+    recipient_type = str(body.get("recipient_type") or "")
+    if recipient_type == "phone_number":
+        tel = req.phone_number.strip()
+        if not tel.startswith("+"):
+            raise HTTPException(
+                status_code=400,
+                detail="Este produto precisa de telefone em formato E.164 (ex.: +5511987654321).",
+            )
+    else:
+        tel = ""
+
+    selected: dict[str, Any] | None = None
+    quoted_sats = 0
+    canonical_pkg_id = ""
+
+    if pkgs:
+        if not pkg_id_needle:
+            raise HTTPException(
+                status_code=400,
+                detail="Seleccione um valor/pacote (package_id obrigatório).",
+            )
+        for p in pkgs:
+            if not isinstance(p, dict):
+                continue
+            cand = (
+                str(p.get("package_id") or "").strip()
+                or str(p.get("id") or "").strip()
+            )
+            if cand == pkg_id_needle:
+                selected = p
+                canonical_pkg_id = cand
+                break
+        if selected is None:
+            raise HTTPException(status_code=400, detail="package_id não existe neste produto")
+        q = _extract_package_quote_sats(selected)
+        if not q:
+            raise HTTPException(
+                status_code=502,
+                detail="Não foi possível ler o preço (sats) do pacote escolhido.",
+            )
+        quoted_sats = q
+    elif isinstance(rng, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Produtos só com valor variável (range) — escolha outro produto por agora.",
+        )
+    else:
+        raise HTTPException(status_code=400, detail="produto sem pacotes nem range reconhecível")
+
+    spread = max(0, int(settings.bitrefill_spread_sat))
+    buffer_vol = max(12_500, int(quoted_sats * 4 // 100))
+
+    fee_rate = DEFAULT_SWAP_FEE_RATE_SAT_VB
+    try:
+        fee_rate = int(
+            getattr(settings, "swap_fee_rate_sat_vb", DEFAULT_SWAP_FEE_RATE_SAT_VB)
+            or DEFAULT_SWAP_FEE_RATE_SAT_VB
+        )
+    except Exception:
+        fee_rate = DEFAULT_SWAP_FEE_RATE_SAT_VB
+    if fee_rate <= 0:
+        fee_rate = DEFAULT_SWAP_FEE_RATE_SAT_VB
+    try:
+        mp = await rpc.call("getmempoolinfo")
+        if isinstance(mp, dict) and mp.get("mempoolminfee") is not None:
+            floor_rate = _btc_kvb_to_sat_vb_ceil(mp.get("mempoolminfee"))
+            if floor_rate > fee_rate:
+                fee_rate = floor_rate
+    except Exception:
+        pass
+
+    fee_est = max(_estimate_fee_sats(fee_rate, num_inputs=1, num_outputs=2), MIN_SWAP_FEE_SATS)
+    required_total = quoted_sats + fee_est + spread + buffer_vol
+
+    order = SwapOrder(
+        output_sats=int(quoted_sats),
+        destination_btc_address=PLACEHOLDER_BITREFILL_DESTINATION,
+        deposit_btc_address=f"pending-{uuid4()}",
+        required_deposit_sats=int(required_total),
+        fee_rate_sat_vb=fee_rate,
+        provider="bitrefill",
+        provider_id=None,
+        status="created",
+        payout_txid=None,
+        last_error=None,
+    )
+    session.add(order)
+    await session.flush()
+
+    try:
+        await _ensure_wallet_loaded(wallet)
+        refund_addr = await rpc.call(
+            "getnewaddress",
+            [f"bitrefill-refund-{order.id}", "bech32"],
+            wallet=wallet,
+        )
+        deposit_addr = await rpc.call(
+            "getnewaddress",
+            [f"bitrefill-order-{order.id}", "bech32"],
+            wallet=wallet,
+        )
+    except Exception as exc:
+        order.status = "error"
+        order.last_error = f"wallet RPC: {exc}"
+        await log_swap_step(
+            session,
+            order.id,
+            "bitrefill.order.addresses",
+            "falha getnewaddress",
+            {"error": str(exc)},
+        )
+        await session.commit()
+        raise HTTPException(status_code=502, detail="falha ao gerar endereços") from exc
+
+    br = SwapOrderBitrefill(
+        swap_order_id=order.id,
+        product_id=req.product_id.strip(),
+        package_id=canonical_pkg_id if canonical_pkg_id else None,
+        product_name_snapshot=str(body.get("name") or "")[:255] or None,
+        customer_email=str(req.customer_email).strip(),
+        recipient_phone=tel.strip() or None,
+        refund_btc_address=str(refund_addr),
+        quoted_price_sats=int(quoted_sats),
+    )
+    session.add(br)
+
+    order.deposit_btc_address = str(deposit_addr)
+    order.status = "awaiting_deposit"
+    await log_swap_step(
+        session,
+        order.id,
+        "bitrefill.order.created",
+        "ordem compra criada — aguarda depósito on-chain na nossa wallet",
+        {
+            "product_id": br.product_id,
+            "quoted_price_sats": quoted_sats,
+            "required_deposit_sats": required_total,
+        },
+    )
+    await session.commit()
+
+    return CreateOrderResponse(
+        order_id=order.id,
+        status=order.status,
+        deposit_btc_address=order.deposit_btc_address,
+        required_deposit_sats=order.required_deposit_sats,
+        output_sats=order.output_sats,
+        fee_rate_sat_vb=order.fee_rate_sat_vb,
+        provider="bitrefill",
+    )

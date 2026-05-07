@@ -7,8 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.bitcoin_rpc import BitcoinRpcClient, BitcoinRpcError
+from app.bitrefill_client import BitrefillClientError, bitrefill_create_invoice
 from app.db import get_session_factory
-from app.models import SwapOrder
+from app.models import SwapOrder, SwapOrderBitrefill
 from app.routers.node import _ensure_fee_address_index0
 from app.routers.node import _ensure_wallet_loaded
 from app.settings import settings
@@ -46,6 +47,99 @@ def _btc_kvb_to_sat_vb_ceil(btc_per_kvb: Any) -> int:
         return 0
     sat_per_vb = (d * Decimal(100_000_000)) / Decimal(1000)
     return int(sat_per_vb.to_integral_value(rounding=ROUND_CEILING))
+
+
+async def _ensure_bitrefill_invoice(
+    session: AsyncSession,
+    order: SwapOrder,
+) -> bool:
+    """Cria invoice crypto na Bitrefill na primeira vez; actualiza destination + output_sats."""
+
+    row = await session.execute(
+        select(SwapOrderBitrefill).where(SwapOrderBitrefill.swap_order_id == order.id)
+    )
+    br = row.scalar_one_or_none()
+    if br is None:
+        order.status = "awaiting_deposit"
+        order.last_error = "dados Bitrefill em falta (swap_order_bitrefill)"
+        await log_swap_step(
+            session,
+            order.id,
+            "_try_payout.bitrefill_meta",
+            "swap_order_bitrefill em falta",
+            {},
+        )
+        return False
+    if br.bitrefill_invoice_id:
+        return True
+
+    prod: dict[str, Any] = {
+        "product_id": br.product_id,
+        "quantity": 1,
+    }
+    if br.package_id:
+        prod["package_id"] = br.package_id.strip()
+    if br.recipient_phone:
+        prod["phone_number"] = br.recipient_phone.strip()
+
+    body = {
+        "products": [prod],
+        "payment_method": "bitcoin",
+        "refund_address": br.refund_btc_address,
+        "email": br.customer_email,
+        "send_email": True,
+    }
+    try:
+        inv = await bitrefill_create_invoice(body)
+    except BitrefillClientError as exc:
+        order.status = "awaiting_deposit"
+        order.last_error = f"invoice Bitrefill: {exc}"
+        await log_swap_step(session, order.id, "bitrefill.invoice_error", str(exc), {})
+        return False
+
+    data = inv.get("data") if isinstance(inv, dict) else None
+    if not isinstance(data, dict):
+        order.status = "awaiting_deposit"
+        order.last_error = "resposta invoice inválida (sem data)"
+        return False
+    pay = data.get("payment")
+    if not isinstance(pay, dict):
+        order.status = "awaiting_deposit"
+        order.last_error = "invoice sem objeto payment"
+        return False
+
+    addr = str(pay.get("address") or "").strip()
+    payout_sats = _btc_to_sats(pay.get("price"))
+    inv_id = str(data.get("id") or "").strip()
+    if not addr or payout_sats <= 0:
+        order.status = "awaiting_deposit"
+        order.last_error = "invoice sem payment.address / price válidos"
+        await log_swap_step(
+            session,
+            order.id,
+            "bitrefill.invoice_bad_payment",
+            "payment incompleto",
+            {"invoice_id": inv_id},
+        )
+        return False
+
+    br.bitrefill_invoice_id = inv_id or None
+    order.destination_btc_address = addr
+    order.output_sats = payout_sats
+    if inv_id:
+        order.provider_id = inv_id[: min(127, len(inv_id))]
+    await log_swap_step(
+        session,
+        order.id,
+        "bitrefill.invoice_created",
+        "invoice Bitrefill criada — destino efectivo definido",
+        {
+            "invoice_id": inv_id,
+            "payment_address": addr,
+            "payment_sats": payout_sats,
+        },
+    )
+    return True
 
 
 class SwapOrderProcessor:
@@ -172,6 +266,10 @@ class SwapOrderProcessor:
                 continue
             utxos.append({"txid": txid, "vout": vout})
             total_sats += sats
+
+        if order.provider == "bitrefill":
+            if not await _ensure_bitrefill_invoice(session, order):
+                return
 
         if total_sats < int(order.required_deposit_sats):
             order.status = "awaiting_deposit"

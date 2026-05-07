@@ -75,6 +75,7 @@ class CreateOrderResponse(BaseModel):
     required_deposit_sats: int
     output_sats: int
     fee_rate_sat_vb: int
+    provider: str = Field(default="internal")
 
 
 @router.post("/orders", response_model=CreateOrderResponse)
@@ -180,6 +181,7 @@ async def create_order(
         required_deposit_sats=order.required_deposit_sats,
         output_sats=order.output_sats,
         fee_rate_sat_vb=order.fee_rate_sat_vb,
+        provider=order.provider or "internal",
     )
 
 
@@ -192,6 +194,7 @@ class GetOrderResponse(BaseModel):
     destination_btc_address: str
     payout_txid: str | None
     last_rpc_status: str | None
+    provider: str = Field(default="internal")
 
 
 async def _refresh_confirmation_if_needed(session: AsyncSession, order: SwapOrder) -> None:
@@ -243,6 +246,7 @@ async def get_order(order_id: int, session: AsyncSession = Depends(get_session))
         destination_btc_address=order.destination_btc_address,
         payout_txid=order.payout_txid,
         last_rpc_status=order.last_error,
+        provider=order.provider or "internal",
     )
 
 

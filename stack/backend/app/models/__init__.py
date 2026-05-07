@@ -74,6 +74,10 @@ class SwapOrder(Base):
         "SwapOrderBoltz", back_populates="order", uselist=False
     )
 
+    bitrefill_details: Mapped["SwapOrderBitrefill | None"] = relationship(
+        "SwapOrderBitrefill", back_populates="order", uselist=False
+    )
+
 
 class SwapOrderLog(Base):
     """Log técnico das etapas do processamento de uma ordem de swap."""
@@ -144,3 +148,36 @@ class SwapOrderBoltz(Base):
     )
 
     order: Mapped["SwapOrder"] = relationship("SwapOrder", back_populates="boltz_details")
+
+
+class SwapOrderBitrefill(Base):
+    """Metadados de ordens Compras: catálogo Bitrefill antes/durante payout."""
+
+    __tablename__ = "swap_order_bitrefill"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    swap_order_id: Mapped[int] = mapped_column(
+        ForeignKey("swap_orders.id"), unique=True, index=True, nullable=False
+    )
+
+    product_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    package_id: Mapped[str | None] = mapped_column(String(384), nullable=True)
+    product_name_snapshot: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    customer_email: Mapped[str] = mapped_column(String(255), nullable=False)
+    recipient_phone: Mapped[str | None] = mapped_column(String(48), nullable=True)
+
+    # Endereço nosso gerado só para campo refund da invoice crypto (antes do depósito).
+    refund_btc_address: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    # Cotação no GET /products/{id} (campo price do pacote), em sats — buffer na ordem cobre variação.
+    quoted_price_sats: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+
+    bitrefill_invoice_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
+
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )
+
+    order: Mapped["SwapOrder"] = relationship("SwapOrder", back_populates="bitrefill_details")
