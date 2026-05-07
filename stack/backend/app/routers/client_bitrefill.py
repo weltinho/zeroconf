@@ -217,18 +217,6 @@ async def catalog_products(
 PLACEHOLDER_BITREFILL_DESTINATION = "BITREFILL_PENDING"
 
 
-async def _chain_is_signet_rpc() -> bool:
-    """Signet pelo Core (mais fiável que env sozinha quando zmq já viu rede)."""
-
-    try:
-        info = await rpc.call("getblockchaininfo")
-        if isinstance(info, dict):
-            return str(info.get("chain") or "").lower() == "signet"
-    except Exception:
-        pass
-    return (settings.bitcoin_network or "").strip().lower() == "signet"
-
-
 def _extract_package_quote_sats(sel: dict[str, Any]) -> int | None:
     raw = sel.get("price")
     if raw is None:
@@ -258,11 +246,6 @@ async def bitrefill_create_order(
     """
 
     _require_bitrefill()
-    if await _chain_is_signet_rpc():
-        raise HTTPException(
-            status_code=503,
-            detail="Compras Bitrefill indisponíveis em signet — use rede main.",
-        )
 
     wallet = settings.bitcoin_operator_wallet.strip()
     if not wallet:

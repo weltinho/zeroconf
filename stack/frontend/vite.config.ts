@@ -1,26 +1,39 @@
-import { defineConfig } from "vite";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
-export default defineConfig({
-  plugins: [react()],
-  server: {
-    host: "0.0.0.0",
-    port: 5173,
-    // Atrás do Caddy com Host custom (DuckDNS, IP, etc.) o Vite 5+ bloqueia por defeito.
-    allowedHosts: true,
-    proxy: {
-      "/api": {
-       target: "http://backend:8000",
-       // target: "https://zconfcore.duckdns.org/",
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ""),
-      },
-      "/ws": {
-        target: "ws://backend:8000",
-        //target: "wss://zconfcore.duckdns.org/",
-        ws: true,
-        changeOrigin: true,
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+/** Pasta `stack/` — partilha `.env` com o compose (`VITE_DEV_*`). */
+const stackEnvDir = path.resolve(__dirname, "..");
+
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, stackEnvDir, "");
+  const apiTarget =
+    env.VITE_DEV_API_PROXY?.trim() || "http://127.0.0.1:8200";
+  const wsTarget =
+    env.VITE_DEV_WS_PROXY?.trim() ||
+    apiTarget.replace(/^http/, "ws");
+
+  return {
+    plugins: [react()],
+    envDir: stackEnvDir,
+    server: {
+      host: "0.0.0.0",
+      port: 5173,
+      // Atrás do Caddy com Host custom (DuckDNS, IP, etc.) o Vite 5+ bloqueia por defeito.
+      allowedHosts: true,
+      proxy: {
+        "/api": {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+        "/ws": {
+          target: wsTarget,
+          ws: true,
+          changeOrigin: true,
+        },
       },
     },
-  },
+  };
 });

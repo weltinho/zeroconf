@@ -348,14 +348,14 @@ export function ClientAreaPage() {
   }, [comprasProductId]);
 
   useEffect(() => {
-    if (mode !== "compras" || chain === "signet") return;
+    if (mode !== "compras") return;
     setComprasProductId("");
     setComprasPackageId("");
     setBitrefillError(null);
   }, [comprasCategorySlug, comprasCountryCode, mode, chain]);
 
   useEffect(() => {
-    if (mode !== "compras" || chain === "signet") return;
+    if (mode !== "compras") return;
     let cancelled = false;
     setBitrefillLoading(true);
     setBitrefillError(null);
@@ -521,7 +521,6 @@ export function ClientAreaPage() {
   }
 
   async function onCreateCompras() {
-    if (chain === "signet") return;
     stopPolling();
     setError("");
     setBoltzCreated(null);
@@ -672,13 +671,9 @@ export function ClientAreaPage() {
                 role="tab"
                 aria-selected={mode === "lightning"}
                 className={mode === "lightning" ? "is-active" : ""}
-                disabled={chain === "signet"}
-                title={chain === "signet" ? "Swap não disponível em signet" : undefined}
                 onClick={() => {
-                  if (chain !== "signet") {
-                    setMode("lightning");
-                    setError("");
-                  }
+                  setMode("lightning");
+                  setError("");
                 }}
               >
                 Swap ⚡ Lightning
@@ -688,30 +683,14 @@ export function ClientAreaPage() {
                 role="tab"
                 aria-selected={mode === "compras"}
                 className={mode === "compras" ? "is-active" : ""}
-                disabled={chain === "signet"}
-                title={chain === "signet" ? "Compras Bitrefill indisponível em signet" : undefined}
                 onClick={() => {
-                  if (chain !== "signet") {
-                    setMode("compras");
-                    setError("");
-                  }
+                  setMode("compras");
+                  setError("");
                 }}
               >
                 Compras
               </button>
             </div>
-            {chain === "signet" && (mode === "lightning" || mode === "compras") && (
-              <p
-                className="panel-hint"
-                style={{
-                  marginTop: "-0.5rem",
-                  marginBottom: "0.75rem",
-                  color: "var(--color-warning, #f59e0b)",
-                }}
-              >
-                ⚠ Swap Lightning e Compras Bitrefill não disponíveis em signet — use mainnet.
-              </p>
-            )}
 
             {error ? <p className="error">{error}</p> : null}
 
@@ -826,7 +805,7 @@ export function ClientAreaPage() {
                   <select
                     value={comprasCountryCode}
                     onChange={(e) => setComprasCountryCode(e.target.value)}
-                    disabled={bitrefillLoading || chain === "signet"}
+                    disabled={bitrefillLoading}
                   >
                     {comprasCountries.map((c) => (
                       <option key={c.code} value={c.code}>
@@ -841,7 +820,7 @@ export function ClientAreaPage() {
                   <select
                     value={comprasCategorySlug}
                     onChange={(e) => setComprasCategorySlug(e.target.value)}
-                    disabled={bitrefillLoading || chain === "signet"}
+                    disabled={bitrefillLoading}
                   >
                     {comprasCategories.length === 0 ? (
                       <option value="">{(bitrefillLoading && !bitrefillError) ? "Carregando…" : "—"}</option>
@@ -860,7 +839,7 @@ export function ClientAreaPage() {
                   <select
                     value={comprasProductId}
                     onChange={(e) => setComprasProductId(e.target.value)}
-                    disabled={bitrefillLoading || chain === "signet"}
+                    disabled={bitrefillLoading}
                   >
                     <option value="">Selecione…</option>
                     {comprasProducts.map((p) => (
@@ -930,7 +909,6 @@ export function ClientAreaPage() {
                       comprasSubmitting ||
                       creating ||
                       bitrefillLoading ||
-                      chain === "signet" ||
                       !comprasProductId ||
                       !comprasEmail.trim() ||
                       (comprasNeedsPhone ? !comprasPhone.trim() : false) ||
