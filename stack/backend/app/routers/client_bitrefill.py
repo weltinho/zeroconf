@@ -26,7 +26,7 @@ CATALOG_CATEGORY_OPTIONS: tuple[dict[str, str], ...] = (
     {"slug": "refill", "label": "Recarga celular"},
     {"slug": "streaming,entertainment", "label": "Streaming / entretenimento"},
     {"slug": "games", "label": "Jogos"},
-    {"slug": "ecommerce,retail,giftcard", "label": "Gift cards / varejo"},
+    {"slug": "ecommerce,retail,gift_card", "label": "Gift cards / varejo"},
     {"slug": "esim,SIM,data", "label": "Dados / eSIM"},
 )
 
