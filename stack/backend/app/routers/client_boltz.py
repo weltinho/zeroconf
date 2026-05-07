@@ -29,7 +29,7 @@ from app.db import get_session
 from app.models import SwapOrder, SwapOrderBoltz
 from app.settings import settings
 from app.swap_logs import log_swap_step
-from app.bitcoin_rpc import BitcoinRpcClient, BitcoinRpcError
+from app.deps import rpc
 from app.routers.node import _ensure_wallet_loaded
 
 logger = logging.getLogger(__name__)
@@ -138,7 +138,20 @@ async def create_boltz_order(
     if not invoice:
         raise HTTPException(status_code=400, detail="invoice is required")
 
-    # 1. Obter pares Boltz (para extrair pair_hash e validar limites).
+    # 1. Gerar endereço de depósito na nossa wallet ANTES de qualquer chamada externa.
+    wallet = settings.bitcoin_operator_wallet.strip()
+    if not wallet:
+        raise HTTPException(status_code=503, detail="Operator wallet not configured")
+    try:
+        await _ensure_wallet_loaded(wallet)
+        our_deposit_address = str(
+            await rpc.call("getnewaddress", ["boltz-swap", "bech32m"], wallet=wallet)
+        )
+    except Exception as exc:
+        logger.error("Failed to generate deposit address: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate deposit address") from exc
+
+    # 2. Obter pares Boltz (para extrair pair_hash e validar limites).
     try:
         pairs_data = await get_submarine_pairs()
     except BoltzClientError as exc:
@@ -182,20 +195,6 @@ async def create_boltz_order(
     if not boltz_swap_id or not lockup_address:
         logger.error("Boltz swap response missing id/address: %s", swap_data)
         raise HTTPException(status_code=502, detail="Incomplete Boltz swap response")
-
-    # 4. Gerar endereço de depósito na nossa wallet (o cliente envia para cá).
-    wallet = settings.bitcoin_operator_wallet.strip()
-    if not wallet:
-        raise HTTPException(status_code=503, detail="Operator wallet not configured")
-    try:
-        await _ensure_wallet_loaded(wallet)
-        rpc = BitcoinRpcClient(settings.bitcoin_rpc_url, settings.bitcoin_rpc_user, settings.bitcoin_rpc_password)
-        our_deposit_address = str(
-            await rpc.call("getnewaddress", [f"boltz-swap-{boltz_swap_id}", "bech32m"], wallet=wallet)
-        )
-    except Exception as exc:
-        logger.error("Failed to generate deposit address: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to generate deposit address") from exc
 
     # required_deposit_sats = o que a Boltz espera + nossa taxa + fee estimada da tx de forward.
     forward_fee_sat = _estimate_forward_fee_sats()
