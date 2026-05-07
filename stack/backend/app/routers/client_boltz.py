@@ -307,6 +307,7 @@ class GetBoltzOrderResponse(BaseModel):
 async def get_boltz_order(
     order_id: int,
     session: AsyncSession = Depends(get_session),
+    recovery: bool = False,
 ) -> Any:
     from sqlalchemy import select
 
@@ -319,6 +320,44 @@ async def get_boltz_order(
     order = result.scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=404, detail="Boltz order not found")
+
+    # Recovery: se o depósito chegou mas o ZMQ perdeu o evento, verifica listunspent.
+    if recovery and order.status == "awaiting_deposit":
+        wallet = settings.bitcoin_operator_wallet.strip()
+        if wallet:
+            try:
+                from app.routers.node import _ensure_wallet_loaded
+                from app.swap_processor import SwapOrderProcessor
+                from app.deps import rpc as _rpc
+                await _ensure_wallet_loaded(wallet)
+                unspent = await _rpc.call(
+                    "listunspent",
+                    [0, 9999999, [order.deposit_btc_address], True],
+                    wallet=wallet,
+                )
+                if isinstance(unspent, list) and unspent:
+                    logger.info(
+                        "Recovery: UTXOs encontrados para order %d em %s — disparando processamento",
+                        order_id, order.deposit_btc_address,
+                    )
+                    await log_swap_step(
+                        session, order_id,
+                        "boltz.recovery",
+                        "UTXOs detectados via recovery scan — disparando swap processor",
+                        {"utxo_count": len(unspent), "address": order.deposit_btc_address},
+                    )
+                    await session.commit()
+                    processor = SwapOrderProcessor(_rpc)
+                    # Usa o txid do primeiro UTXO como event_txid para rastreamento.
+                    event_txid = str(unspent[0].get("txid", "")) or None
+                    from app.db import get_session_factory as _gsf
+                    async with _gsf()() as proc_session:
+                        await processor._try_payout_order(proc_session, wallet, order, event_txid=event_txid)
+                        await proc_session.commit()
+                    # Relê a ordem atualizada.
+                    await session.refresh(order)
+            except Exception as exc:
+                logger.warning("Recovery scan falhou para order %d: %s", order_id, exc)
 
     result_boltz = await session.execute(
         select(SwapOrderBoltz).where(SwapOrderBoltz.swap_order_id == order.id)
