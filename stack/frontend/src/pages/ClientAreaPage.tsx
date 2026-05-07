@@ -611,19 +611,6 @@ export function ClientAreaPage() {
                 Swap Lightning <strong>#{liveBoltz.order_id}</strong>
               </p>
 
-              {/* Link para o tracker da Boltz */}
-              {boltzSwapId && (
-                <p className="panel-hint" style={{ marginTop: 0 }}>
-                  <a
-                    href={`https://boltz.exchange/swap/${boltzSwapId}`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Acompanhar no Boltz Exchange ↗
-                  </a>
-                </p>
-              )}
-
               {/* Indicador de etapas */}
               {boltzStatus !== "error" && (
                 <div style={{ display: "flex", gap: "0.2rem", margin: "0.5rem 0 0.9rem", fontSize: "0.68rem" }}>

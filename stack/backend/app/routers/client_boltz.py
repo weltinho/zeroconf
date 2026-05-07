@@ -107,7 +107,7 @@ async def get_fees() -> Any:
         return BoltzFeesResponse(
             percentage=float(fees.get("percentage", 0.1)),
             miner_fee_sat=int(fees.get("minerFees", 302)),
-            our_fee_sat=OUR_FEE_SAT,
+            our_fee_sat=OUR_FEE_SAT + _estimate_forward_fee_sats(),
             min_amount_sat=int(limits.get("minimal", 25000)),
             max_amount_sat=int(limits.get("maximal", 25000000)),
         )

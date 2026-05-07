@@ -29,6 +29,15 @@ _POLL_INTERVAL_SEC = 30
 # Estados terminais: ordens nestes estados não são mais consultadas.
 _TERMINAL_STATUSES = frozenset({"paid_out", "error"})
 
+# Ordem de progressão dos status locais: nunca regredir para um estado anterior.
+_STATUS_RANK: dict[str, int] = {
+    "awaiting_deposit": 0,
+    "deposit_detected": 1,
+    "provider_processing": 2,
+    "paid_out": 3,
+    "error": 3,
+}
+
 
 async def _poll_once() -> None:
     """Executa um ciclo de polling: consulta todas as ordens Boltz ativas."""
@@ -67,6 +76,10 @@ async def _poll_order(order_id: int, boltz_swap_id: str | None) -> None:
     new_local_status = boltz_status_to_local(status_raw)
     payload_json = json.dumps(status_data, ensure_ascii=True, separators=(",", ":"))
 
+    # Se a Boltz retornou preimage, a invoice foi definitivamente paga.
+    if status_data.get("preimage"):
+        new_local_status = "paid_out"
+
     factory = get_session_factory()
     async with factory() as session:
         # Relê a ordem dentro da sessão para ter estado atualizado.
@@ -91,21 +104,31 @@ async def _poll_order(order_id: int, boltz_swap_id: str | None) -> None:
             boltz_detail.last_payload_json = payload_json
 
         if order.status != new_local_status:
-            logger.info(
-                "Boltz order %d: %s -> %s (raw: %s)",
-                order_id,
-                order.status,
-                new_local_status,
-                status_raw,
-            )
-
-            if new_local_status == "error":
-                failure_reason = status_data.get("failureReason", "")
-                order.last_error = f"Boltz: {status_raw}" + (
-                    f" — {failure_reason}" if failure_reason else ""
+            # Não regredir para status menos avançado (ex.: transaction.confirmed
+            # não deve voltar de provider_processing para deposit_detected).
+            current_rank = _STATUS_RANK.get(order.status, 0)
+            new_rank = _STATUS_RANK.get(new_local_status, 0)
+            if new_rank < current_rank:
+                logger.debug(
+                    "Boltz order %d: ignorando regressão de status %s -> %s (raw: %s)",
+                    order_id, order.status, new_local_status, status_raw,
+                )
+            else:
+                logger.info(
+                    "Boltz order %d: %s -> %s (raw: %s)",
+                    order_id,
+                    order.status,
+                    new_local_status,
+                    status_raw,
                 )
 
-            order.status = new_local_status
+                if new_local_status == "error":
+                    failure_reason = status_data.get("failureReason", "")
+                    order.last_error = f"Boltz: {status_raw}" + (
+                        f" — {failure_reason}" if failure_reason else ""
+                    )
+
+                order.status = new_local_status
 
         if status_changed:
             await log_swap_step(
