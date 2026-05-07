@@ -2,8 +2,8 @@
 # (o mesmo nome que o compose na raiz do bitcoind): é criada aqui se ainda não existir,
 # ou junta-se à rede já criada pelo bitcoind.
 #
-# Env: `stack/.env` (esta pasta). O backend também carrega `../.env` na raiz para
-# BITCOIN_RPC_* iguais aos do bitcoind sem duplicar secrets da stack.
+# Env: `stack/.env` (esta pasta). O backend também carrega `../.env` na raiz só para
+# BITCOIN_RPC_* com o bitcoind. `BITREFILL_*` e resto da stack ficam em `stack/.env`.
 
 name: stack
 

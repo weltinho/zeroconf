@@ -68,6 +68,56 @@ type BoltzFees = {
   max_amount_sat: number;
 };
 
+type CatalogCategoryOpt = {
+  slug: string;
+  label: string;
+};
+
+type CatalogCountryOpt = {
+  code: string;
+  name: string;
+};
+
+function bitrefillFetchErrorMessage(status: number, detail: string): string {
+  const d = detail.trim() || "erro desconhecido";
+  if (status === 404) {
+    return `${d} · 404: a API em uso não expõe /client/bitrefill/ (backend desatualizado ou proxy errado). Em dev, confira VITE_DEV_API_PROXY em stack/frontend e o alvo em vite.config.ts.`;
+  }
+  return d;
+}
+
+function catalogProductsPath(start: number, categorySlug: string, countryCode: string): string {
+  const q = new URLSearchParams({
+    start: String(start),
+    limit: "50",
+    country: countryCode.trim().toUpperCase().slice(0, 2) || "BR",
+  });
+  const cat = categorySlug.trim();
+  if (cat) {
+    q.set("category", cat);
+  }
+  return `/client/bitrefill/catalog/products?${q.toString()}`;
+}
+
+type CatalogPackage = {
+  id: string | null;
+  value?: string | number | null;
+  price?: number | null;
+  amount?: string | number | null;
+};
+
+type CatalogProduct = {
+  id: string | null;
+  name: string | null;
+  currency: string | null;
+  recipient_type?: string | null;
+  in_stock: boolean;
+  categories: string[];
+  packages: CatalogPackage[];
+  range?: Record<string, unknown> | null;
+  country_code?: string | null;
+};
+
 /** Extrai o valor em sats da HRP de uma invoice BOLT11 (sem lib externa).
  *  Formato: ln + rede + [amount][multiplier] + 1 + ...
  *  Multipliers: m=milli, u=micro, n=nano, p=pico (BTC)
@@ -156,7 +206,7 @@ export function ClientAreaPage() {
   const [unit, setUnit] = useState<"sats" | "btc">("sats");
   const [destination, setDestination] = useState("");
 
-  const [mode, setMode] = useState<"onchain" | "lightning">("onchain");
+  const [mode, setMode] = useState<"onchain" | "lightning" | "compras">("onchain");
   const [invoice, setInvoice] = useState("");
 
   const [creating, setCreating] = useState(false);
@@ -169,6 +219,22 @@ export function ClientAreaPage() {
   const [boltzCreated, setBoltzCreated] = useState<CreateBoltzOrderResponse | null>(null);
   const [boltzOrder, setBoltzOrder] = useState<GetBoltzOrderResponse | null>(null);
   const [boltzFees, setBoltzFees] = useState<BoltzFees | null>(null);
+
+  const [comprasCategorySlug, setComprasCategorySlug] = useState("");
+  const [comprasCountryCode, setComprasCountryCode] = useState("BR");
+  const [comprasCountries, setComprasCountries] = useState<CatalogCountryOpt[]>([
+    { code: "BR", name: "Brasil" },
+  ]);
+  const [comprasCategories, setComprasCategories] = useState<CatalogCategoryOpt[]>([]);
+  const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
+  const [comprasNextStart, setComprasNextStart] = useState<number | null>(null);
+  const [comprasProductId, setComprasProductId] = useState("");
+  const [comprasPackageId, setComprasPackageId] = useState("");
+  const [comprasEmail, setComprasEmail] = useState("");
+  const [comprasPhone, setComprasPhone] = useState("");
+  const [bitrefillLoading, setBitrefillLoading] = useState(false);
+  const [bitrefillLoadingMore, setBitrefillLoadingMore] = useState(false);
+  const [bitrefillError, setBitrefillError] = useState<string | null>(null);
 
   const pollTimerRef = useRef<number | null>(null);
   const initialOrderLoadedRef = useRef(false);
@@ -268,6 +334,122 @@ export function ClientAreaPage() {
     void loadFees();
     return () => { active = false; };
   }, [mode]);
+
+  const comprasSelectedProduct = useMemo(
+    () => comprasProducts.find((p) => String(p.id) === comprasProductId) ?? null,
+    [comprasProducts, comprasProductId],
+  );
+
+  const comprasNeedsPhone = comprasSelectedProduct?.recipient_type === "phone_number";
+
+  useEffect(() => {
+    setComprasPackageId("");
+  }, [comprasProductId]);
+
+  useEffect(() => {
+    if (mode !== "compras" || chain === "signet") return;
+    setComprasProductId("");
+    setComprasPackageId("");
+    setComprasNextStart(null);
+    setBitrefillError(null);
+  }, [comprasCategorySlug, comprasCountryCode, mode, chain]);
+
+  useEffect(() => {
+    if (mode !== "compras" || chain === "signet") return;
+    let cancelled = false;
+    setBitrefillLoading(true);
+    setBitrefillError(null);
+
+    async function load() {
+      try {
+        const productsPath = catalogProductsPath(0, comprasCategorySlug, comprasCountryCode);
+        const [countriesRes, catRes, prodRes] = await Promise.all([
+          fetch(apiUrl("/client/bitrefill/catalog/countries")),
+          fetch(apiUrl("/client/bitrefill/catalog/categories")),
+          fetch(apiUrl(productsPath)),
+        ]);
+        if (cancelled) return;
+        if (!countriesRes.ok) {
+          const b = await countriesRes.json().catch(() => ({}));
+          const raw = typeof b?.detail === "string" ? b.detail : "";
+          throw new Error(bitrefillFetchErrorMessage(countriesRes.status, raw || `HTTP ${countriesRes.status}`));
+        }
+        if (!catRes.ok) {
+          const b = await catRes.json().catch(() => ({}));
+          const raw = typeof b?.detail === "string" ? b.detail : "";
+          throw new Error(bitrefillFetchErrorMessage(catRes.status, raw || `HTTP ${catRes.status}`));
+        }
+        if (!prodRes.ok) {
+          const b = await prodRes.json().catch(() => ({}));
+          const raw = typeof b?.detail === "string" ? b.detail : "";
+          throw new Error(bitrefillFetchErrorMessage(prodRes.status, raw || `HTTP ${prodRes.status}`));
+        }
+        const countriesJson = (await countriesRes.json()) as { data?: CatalogCountryOpt[] };
+        const list = countriesJson.data ?? [];
+        if (list.length > 0) {
+          setComprasCountries(list);
+          const codes = new Set(list.map((c) => c.code));
+          if (!codes.has(comprasCountryCode)) {
+            setComprasCountryCode(list[0].code);
+            return;
+          }
+        }
+        const cats = ((await catRes.json()) as { data?: CatalogCategoryOpt[] }).data ?? [];
+        const pj = (await prodRes.json()) as {
+          products?: CatalogProduct[];
+          meta?: { next_start?: number | null };
+        };
+        setComprasCategories(cats);
+        setComprasProducts(pj.products ?? []);
+        const ns = pj.meta?.next_start;
+        setComprasNextStart(typeof ns === "number" ? ns : null);
+      } catch (e) {
+        if (!cancelled) {
+          setBitrefillError(e instanceof Error ? e.message : "Erro ao carregar catálogo Bitrefill");
+        }
+      } finally {
+        if (!cancelled) setBitrefillLoading(false);
+      }
+    }
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, chain, comprasCategorySlug, comprasCountryCode]);
+
+  const loadMoreComprasProducts = useCallback(async () => {
+    if (
+      comprasNextStart === null ||
+      bitrefillLoadingMore ||
+      chain === "signet" ||
+      mode !== "compras"
+    )
+      return;
+    setBitrefillLoadingMore(true);
+    try {
+      const r = await fetch(
+        apiUrl(catalogProductsPath(comprasNextStart, comprasCategorySlug, comprasCountryCode)),
+      );
+      const b = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const raw = typeof b?.detail === "string" ? b.detail : "";
+        throw new Error(bitrefillFetchErrorMessage(r.status, raw || `HTTP ${r.status}`));
+      }
+      const pj = b as { products?: CatalogProduct[]; meta?: { next_start?: number | null } };
+      const more = pj.products ?? [];
+      setComprasProducts((prev) => {
+        const seen = new Set(prev.map((p) => String(p.id)));
+        const extra = more.filter((p) => p.id != null && !seen.has(String(p.id)));
+        return [...prev, ...extra];
+      });
+      const ns = pj.meta?.next_start;
+      setComprasNextStart(typeof ns === "number" ? ns : null);
+    } catch (e) {
+      setBitrefillError(e instanceof Error ? e.message : "Erro ao carregar mais produtos");
+    } finally {
+      setBitrefillLoadingMore(false);
+    }
+  }, [comprasNextStart, comprasCategorySlug, comprasCountryCode, bitrefillLoadingMore, chain, mode]);
 
   useEffect(() => {
     if (initialOrderLoadedRef.current) {
@@ -453,13 +635,26 @@ export function ClientAreaPage() {
           <section className="panel panel-rpc">
             <h2>Criar ordem</h2>
 
-            <div className="btc-sats-toggle" role="tablist" aria-label="Tipo de ordem" style={{ marginBottom: "1rem" }}>
+            <div
+              className="btc-sats-toggle"
+              role="tablist"
+              aria-label="Tipo de ordem"
+              style={{
+                marginBottom: "1rem",
+                display: "flex",
+                flexWrap: "wrap",
+                gap: "0.35rem",
+              }}
+            >
               <button
                 type="button"
                 role="tab"
                 aria-selected={mode === "onchain"}
                 className={mode === "onchain" ? "is-active" : ""}
-                onClick={() => { setMode("onchain"); setError(""); }}
+                onClick={() => {
+                  setMode("onchain");
+                  setError("");
+                }}
               >
                 Envio on-chain
               </button>
@@ -470,14 +665,42 @@ export function ClientAreaPage() {
                 className={mode === "lightning" ? "is-active" : ""}
                 disabled={chain === "signet"}
                 title={chain === "signet" ? "Swap não disponível em signet" : undefined}
-                onClick={() => { if (chain !== "signet") { setMode("lightning"); setError(""); } }}
+                onClick={() => {
+                  if (chain !== "signet") {
+                    setMode("lightning");
+                    setError("");
+                  }
+                }}
               >
                 Swap ⚡ Lightning
               </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={mode === "compras"}
+                className={mode === "compras" ? "is-active" : ""}
+                disabled={chain === "signet"}
+                title={chain === "signet" ? "Compras Bitrefill indisponível em signet" : undefined}
+                onClick={() => {
+                  if (chain !== "signet") {
+                    setMode("compras");
+                    setError("");
+                  }
+                }}
+              >
+                Compras
+              </button>
             </div>
-            {chain === "signet" && (
-              <p className="panel-hint" style={{ marginTop: "-0.5rem", marginBottom: "0.75rem", color: "var(--color-warning, #f59e0b)" }}>
-                ⚠ Swap Lightning não disponível em signet — use mainnet.
+            {chain === "signet" && (mode === "lightning" || mode === "compras") && (
+              <p
+                className="panel-hint"
+                style={{
+                  marginTop: "-0.5rem",
+                  marginBottom: "0.75rem",
+                  color: "var(--color-warning, #f59e0b)",
+                }}
+              >
+                ⚠ Swap Lightning e Compras Bitrefill não disponíveis em signet — use mainnet.
               </p>
             )}
 
@@ -529,7 +752,7 @@ export function ClientAreaPage() {
                   </button>
                 </div>
               </form>
-            ) : (
+            ) : mode === "lightning" ? (
               <form onSubmit={onCreateBoltz} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                   <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Invoice BOLT11</span>
@@ -580,13 +803,154 @@ export function ClientAreaPage() {
                   </button>
                 </div>
               </form>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+                <p className="panel-hint" style={{ margin: 0 }}>
+                  Catálogo via API Bitrefill. País por defeito Brasil; em seguida ordem com depósito BTC —
+                  por agora só navegação do catálogo.
+                </p>
+                {bitrefillError ? <p className="error">{bitrefillError}</p> : null}
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>País</span>
+                  <select
+                    value={comprasCountryCode}
+                    onChange={(e) => setComprasCountryCode(e.target.value)}
+                    disabled={bitrefillLoading || chain === "signet"}
+                  >
+                    {comprasCountries.map((c) => (
+                      <option key={c.code} value={c.code}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Categoria</span>
+                  <select
+                    value={comprasCategorySlug}
+                    onChange={(e) => setComprasCategorySlug(e.target.value)}
+                    disabled={bitrefillLoading || chain === "signet"}
+                  >
+                    {comprasCategories.length === 0 ? (
+                      <option value="">{(bitrefillLoading && !bitrefillError) ? "Carregando…" : "—"}</option>
+                    ) : (
+                      comprasCategories.map((c) => (
+                        <option key={c.slug || "__all"} value={c.slug}>
+                          {c.label}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Produto</span>
+                  <select
+                    value={comprasProductId}
+                    onChange={(e) => setComprasProductId(e.target.value)}
+                    disabled={bitrefillLoading || chain === "signet"}
+                  >
+                    <option value="">Selecione…</option>
+                    {comprasProducts.map((p) => (
+                      <option key={String(p.id)} value={String(p.id)} disabled={!p.in_stock}>
+                        {p.name}
+                        {!p.in_stock ? " (indisponível)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {comprasSelectedProduct && comprasSelectedProduct.packages.length > 0 ? (
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Valor / pacote</span>
+                    <select
+                      value={comprasPackageId}
+                      onChange={(e) => setComprasPackageId(e.target.value)}
+                      disabled={!comprasProductId}
+                    >
+                      <option value="">Selecione…</option>
+                      {comprasSelectedProduct.packages.map((pk) => (
+                        <option key={String(pk.id)} value={String(pk.id)}>
+                          {String(pk.value ?? "?")} {comprasSelectedProduct.currency ?? ""}
+                          {pk.price != null ? ` · ref. ${pk.price}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : comprasSelectedProduct?.range ? (
+                  <p className="panel-hint" style={{ margin: 0 }}>
+                    Produto com valor variável (range) — escolha na API Bitrefill com passo definido; fluxo
+                    de compra completo vem no próximo backlog.
+                  </p>
+                ) : null}
+
+                {comprasNeedsPhone ? (
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>
+                      Telefone (E.164, ex. +5511987654321)
+                    </span>
+                    <input
+                      value={comprasPhone}
+                      onChange={(e) => setComprasPhone(e.target.value)}
+                      placeholder="+55…"
+                      autoComplete="tel"
+                    />
+                  </label>
+                ) : null}
+
+                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>
+                    E-mail (para recibo / entrega quando houver ordem)
+                  </span>
+                  <input
+                    type="email"
+                    value={comprasEmail}
+                    onChange={(e) => setComprasEmail(e.target.value)}
+                    placeholder="voce@exemplo.com"
+                    autoComplete="email"
+                  />
+                </label>
+
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    disabled={comprasNextStart === null || bitrefillLoadingMore || chain === "signet"}
+                    onClick={() => void loadMoreComprasProducts()}
+                  >
+                    {bitrefillLoadingMore ? "Carregando…" : "Carregar mais produtos"}
+                  </button>
+                  {bitrefillLoading ? <span className="panel-hint">A atualizar catálogo…</span> : null}
+                </div>
+              </div>
             )}
           </section>
 
           <section className="panel panel-rpc">
             <h2>Status técnico (raw)</h2>
-            {!orderId && !liveBoltz ? (
+            {!orderId && !liveBoltz && mode !== "compras" ? (
               <p className="panel-hint">Crie uma ordem para ver o endereço de depósito.</p>
+            ) : mode === "compras" ? (
+              <pre className="panel-pre rpc-response-pre">
+                {JSON.stringify(
+                  {
+                    seleção: {
+                      país: comprasCountryCode,
+                      categoria: comprasCategorySlug,
+                      produto_id: comprasProductId || null,
+                      pacote_id: comprasPackageId || null,
+                      produto: comprasSelectedProduct,
+                      email: comprasEmail || null,
+                      telefone: comprasNeedsPhone ? comprasPhone || null : undefined,
+                    },
+                    catálogo_carregado: comprasProducts.length,
+                    próxima_página: comprasNextStart,
+                  },
+                  null,
+                  2,
+                )}
+              </pre>
             ) : (
               <pre className="panel-pre rpc-response-pre">
                 {liveBoltz

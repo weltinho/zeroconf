@@ -61,6 +61,15 @@ class Settings(BaseSettings):
     boltz_timeout_sec: int = 20
     # Feature flag: desativa integração Boltz sem remover código.
     boltz_enabled: bool = True
+
+    # Bitrefill — catálogo + invoices (aba «Compras»). Chave via env; desativado até configurar.
+    bitrefill_enabled: bool = False
+    bitrefill_api_key: str = ""
+    bitrefill_base_url: str = "https://api-bitrefill.com/v2"
+    bitrefill_timeout_sec: int = 25
+    # Spread fixo de serviço em satoshis por ordem (produto; ver backlog Bitrefill).
+    bitrefill_spread_sat: int = 1000
+
     # Endereço reservado para taxa/depósito operacional (índice lógico 0 no painel).
     bitcoin_fee_address_label: str = "fee-index-0"
 

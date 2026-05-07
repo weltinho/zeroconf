@@ -16,6 +16,7 @@ from app.routers import (
     swaps_adm as swaps_adm_router,
 )
 from app.routers.client_boltz import router as client_boltz_router
+from app.routers.client_bitrefill import router as client_bitrefill_router
 from app.settings import settings
 from app.swap_processor import SwapOrderProcessor
 
@@ -118,6 +119,7 @@ app.include_router(health.router)
 app.include_router(auth_adm.router)
 app.include_router(client_router.router)
 app.include_router(client_boltz_router)
+app.include_router(client_bitrefill_router)
 app.include_router(node_router.router)
 app.include_router(swaps_adm_router.router)
 app.include_router(events_router.router)
