@@ -148,4 +148,15 @@ async def resolve_to_invoice(destination: str, amount_sats: int, comment: str = 
     if not invoice:
         raise LnurlError("Não foi possível gerar a invoice, verifique o endereço")
 
+    # Detectar BOLT12 offer (começa com 'lno') — não suportado por submarine swaps.
+    if invoice.lower().startswith("lno"):
+        raise LnurlError(
+            "O destinatário usa BOLT12 (offer), que não é compatível com submarine swaps. "
+            "Use um Lightning Address de outro provedor ou cole uma invoice BOLT11 direta."
+        )
+
+    # Validação mínima: deve começar com 'ln'
+    if not invoice.lower().startswith("ln"):
+        raise LnurlError("Invoice retornada pelo destinatário é inválida.")
+
     return invoice

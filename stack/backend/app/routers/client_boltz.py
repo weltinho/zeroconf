@@ -293,10 +293,13 @@ class GetBoltzOrderResponse(BaseModel):
     order_id: int
     status: str
     boltz_swap_id: str
-    deposit_btc_address: str | None
-    expected_onchain_amount_sat: int | None
+    our_deposit_address: str | None = None      # endereço onde o cliente deposita (nossa wallet)
+    deposit_btc_address: str | None             # lockup address da Boltz (para onde nós encaminhamos)
+    required_deposit_sats: int | None = None    # total que o cliente precisa depositar (inclui nossas taxas)
+    expected_onchain_amount_sat: int | None     # valor que a Boltz espera receber de nós
     status_raw: str | None
-    lockup_tx_id: str | None = None
+    lockup_tx_id: str | None = None             # txid da nossa tx de encaminhamento para Boltz
+    preimage: str | None = None                 # prova de pagamento Lightning (disponível após paid_out)
 
 
 @router.get("/orders/{order_id}", response_model=GetBoltzOrderResponse)
@@ -321,12 +324,15 @@ async def get_boltz_order(
     )
     boltz = result_boltz.scalar_one_or_none()
 
-    # Extrai o ID da transação on-chain do payload mais recente da Boltz.
+    # Extrai lockup_tx_id e preimage do payload mais recente da Boltz.
     lockup_tx_id: str | None = None
+    preimage: str | None = None
     if boltz and boltz.last_payload_json:
         try:
             payload = json.loads(boltz.last_payload_json)
             lockup_tx_id = payload.get("transaction", {}).get("id") or None
+            # preimage fica disponível no status invoice.settled
+            preimage = payload.get("preimage") or None
         except Exception:
             pass
 
@@ -334,8 +340,11 @@ async def get_boltz_order(
         order_id=order.id,
         status=order.status,
         boltz_swap_id=boltz.boltz_swap_id if boltz else "",
+        our_deposit_address=order.deposit_btc_address,
         deposit_btc_address=boltz.lockup_address if boltz else None,
+        required_deposit_sats=order.required_deposit_sats,
         expected_onchain_amount_sat=boltz.expected_onchain_amount_sat if boltz else None,
         status_raw=boltz.status_raw if boltz else None,
         lockup_tx_id=lockup_tx_id,
+        preimage=preimage,
     )

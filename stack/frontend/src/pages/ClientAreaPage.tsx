@@ -50,10 +50,13 @@ type GetBoltzOrderResponse = {
   order_id: number;
   status: string;
   boltz_swap_id: string;
-  deposit_btc_address: string | null;
+  our_deposit_address: string | null;   // endereço onde cliente deposita (nossa wallet)
+  deposit_btc_address: string | null;   // lockup address da Boltz
+  required_deposit_sats: number | null; // total a depositar incluindo taxas
   expected_onchain_amount_sat: number | null;
   status_raw: string | null;
   lockup_tx_id: string | null;
+  preimage: string | null;
 };
 
 type BoltzFees = {
@@ -137,6 +140,13 @@ function convertAmountUnit(value: string, from: "btc" | "sats", to: "btc" | "sat
   return (n / SATS_PER_BTC).toFixed(8).replace(/\.?0+$/, "");
 }
 
+const BOLTZ_STEPS: { key: string; label: string }[] = [
+  { key: "awaiting_deposit", label: "Aguardando depósito" },
+  { key: "deposit_detected", label: "Depósito detectado" },
+  { key: "provider_processing", label: "Processando Lightning" },
+  { key: "paid_out", label: "Invoice paga" },
+];
+
 export function ClientAreaPage() {
   const params = useParams<{ orderId?: string }>();
   const t = useMemo(() => getUiText(), []);
@@ -147,7 +157,6 @@ export function ClientAreaPage() {
 
   const [mode, setMode] = useState<"onchain" | "lightning">("onchain");
   const [invoice, setInvoice] = useState("");
-  const [lnAmount, setLnAmount] = useState(""); // sats, usado quando input é lightning address ou lnurl
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -307,15 +316,7 @@ export function ClientAreaPage() {
     setBoltzOrder(null);
     setCreating(true);
     try {
-      const inputType = detectLightningInputType(invoice);
-      let body: Record<string, unknown>;
-      if (inputType === "invoice") {
-        body = { invoice: invoice.trim() };
-      } else {
-        const amtSats = parseInt(lnAmount, 10);
-        if (!amtSats || amtSats <= 0) throw new Error("Informe o valor em sats");
-        body = { lightning_destination: invoice.trim(), amount_sats: amtSats };
-      }
+      const body = { invoice: invoice.trim() };
       const r = await fetch(apiUrl("/client/boltz/orders"), {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -386,26 +387,22 @@ export function ClientAreaPage() {
       : null;
 
   const liveBoltz = boltzOrder ?? boltzCreated;
-  const boltzLockupAddress = liveBoltz?.deposit_btc_address ?? null;
-  const boltzExpectedSat = liveBoltz?.expected_onchain_amount_sat ?? null;
-  const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
   const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
-  const boltzStatusRaw = boltzOrder?.status_raw ?? null;
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
+  // Endereço onde o cliente deposita BTC para nós
+  const clientDepositAddress = boltzCreated?.deposit_btc_address ?? boltzOrder?.our_deposit_address ?? null;
+  // Total que o cliente precisa depositar (inclui todas as taxas)
+  const boltzExpectedSat = boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null;
+  const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
+  // Txid da nossa tx de encaminhamento para o lockup Boltz
+  const boltzLockupTxId = boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null;
+  // Prova de pagamento Lightning (preimage)
+  const boltzPreimage = boltzOrder?.preimage ?? null;
+  // Passo atual no fluxo (−1 se status desconhecido/error)
+  const boltzStepIndex = BOLTZ_STEPS.findIndex((s) => s.key === boltzStatus);
 
-  // Detecta o tipo de input da aba Lightning.
-  const lightningInputType = useMemo(() => detectLightningInputType(invoice), [invoice]);
-  const needsAmountField = lightningInputType === "lightning_address" || lightningInputType === "lnurl";
-
-  // Preview ao vivo — para invoice BOLT11 extrai os sats; para lightning address/lnurl usa lnAmount.
-  const invoiceSats = useMemo(() => {
-    if (lightningInputType === "invoice") return parseBolt11Sats(invoice);
-    if (needsAmountField) {
-      const n = parseInt(lnAmount, 10);
-      return n > 0 ? n : null;
-    }
-    return null;
-  }, [lightningInputType, invoice, lnAmount, needsAmountField]);
+  // Preview ao vivo — extrai sats da invoice BOLT11.
+  const invoiceSats = useMemo(() => parseBolt11Sats(invoice), [invoice]);
   const invoicePreview = useMemo(() => {
     if (!invoiceSats || !boltzFees) return null;
     const percentFee = Math.ceil((invoiceSats * boltzFees.percentage) / 100);
@@ -538,35 +535,23 @@ export function ClientAreaPage() {
             ) : (
               <form onSubmit={onCreateBoltz} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>
-                    {needsAmountField ? "Lightning Address / LNURL" : "Invoice BOLT11"}
-                  </span>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Invoice BOLT11</span>
                   <input
                     value={invoice}
                     onChange={(e) => { setInvoice(e.target.value); setError(""); }}
-                    placeholder="lnbc... ou user@dominio.com ou lnurl1..."
+                    placeholder="lnbc..."
                     style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
                   />
                 </label>
 
-                {needsAmountField && (
-                  <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                    <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Valor a enviar (sats)</span>
-                    <input
-                      type="number"
-                      min={1}
-                      value={lnAmount}
-                      onChange={(e) => { setLnAmount(e.target.value); setError(""); }}
-                      placeholder="ex: 10000"
-                      style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
-                    />
-                  </label>
-                )}
-
                 <p className="panel-hint" style={{ margin: 0 }}>
-                  {needsAmountField
-                    ? "Informe um Lightning Address (user@domínio) ou LNURL e o valor em sats."
-                    : "Cole a invoice Lightning. Vamos converter seu depósito BTC automaticamente."}
+                  Cole aqui uma invoice no valor que você deseja receber via Lightning.
+                  {boltzFees
+                    ? (() => {
+                        const minDeposit = boltzFees.min_amount_sat + Math.ceil(boltzFees.min_amount_sat * boltzFees.percentage / 100) + boltzFees.miner_fee_sat + boltzFees.our_fee_sat;
+                        return ` O mínimo é ${boltzFees.min_amount_sat.toLocaleString("pt-BR")} sats na invoice (você depositará ~${minDeposit.toLocaleString("pt-BR")} sats on-chain incluindo todas as taxas).`;
+                      })()
+                    : null}
                 </p>
 
                 {invoicePreview && (
@@ -580,20 +565,20 @@ export function ClientAreaPage() {
                       <span>+{(invoicePreview.percentFee + invoicePreview.minerFee + invoicePreview.ourFee).toLocaleString()} sats</span>
                     </div>
                     <hr style={{ border: "none", borderTop: "1px solid rgba(0,255,70,0.2)", margin: "0.4rem 0" }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", fontWeight: "bold", color: invoicePreview.total < (boltzFees?.min_amount_sat ?? 0) ? "#f87171" : "inherit" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", fontWeight: "bold", color: invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0) ? "#f87171" : "inherit" }}>
                       <span>Total a depositar</span>
                       <span>{invoicePreview.total.toLocaleString()} sats ({satsToBtc(invoicePreview.total)} BTC)</span>
                     </div>
-                    {invoicePreview.total < (boltzFees?.min_amount_sat ?? 0) && (
+                    {invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0) && (
                       <p style={{ margin: "0.4rem 0 0", color: "#f87171", fontSize: "0.78rem" }}>
-                        ⚠ Valor abaixo do mínimo ({(boltzFees?.min_amount_sat ?? 0).toLocaleString()} sats)
+                        ⚠ Invoice abaixo do mínimo ({(boltzFees?.min_amount_sat ?? 0).toLocaleString()} sats)
                       </p>
                     )}
                   </div>
                 )}
 
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button type="submit" disabled={creating || !invoice.trim() || (invoicePreview != null && invoicePreview.total < (boltzFees?.min_amount_sat ?? 0))}>
+                  <button type="submit" disabled={creating || !invoice.trim() || (invoicePreview != null && invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0))}>
                     {creating ? "Criando…" : "Criar swap"}
                   </button>
                 </div>
@@ -628,7 +613,54 @@ export function ClientAreaPage() {
               <p>
                 Swap Lightning <strong>#{liveBoltz.order_id}</strong>
               </p>
-              {boltzLockupAddress ? (
+
+              {/* Link para o tracker da Boltz */}
+              {boltzSwapId && (
+                <p className="panel-hint" style={{ marginTop: 0 }}>
+                  <a
+                    href={`https://boltz.exchange/swap/${boltzSwapId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Acompanhar no Boltz Exchange ↗
+                  </a>
+                </p>
+              )}
+
+              {/* Indicador de etapas */}
+              {boltzStatus !== "error" && (
+                <div style={{ display: "flex", gap: "0.2rem", margin: "0.5rem 0 0.9rem", fontSize: "0.68rem" }}>
+                  {BOLTZ_STEPS.map((s, i) => (
+                    <div
+                      key={s.key}
+                      style={{
+                        flex: 1,
+                        padding: "0.3rem 0.1rem",
+                        textAlign: "center",
+                        borderRadius: "4px",
+                        background:
+                          i < boltzStepIndex
+                            ? "rgba(0,255,70,0.12)"
+                            : i === boltzStepIndex
+                            ? "rgba(0,255,70,0.28)"
+                            : "rgba(255,255,255,0.04)",
+                        color: i <= boltzStepIndex ? "var(--mx-green, #00ff46)" : "var(--mx-muted)",
+                        border:
+                          i === boltzStepIndex
+                            ? "1px solid rgba(0,255,70,0.5)"
+                            : "1px solid transparent",
+                        lineHeight: 1.3,
+                      }}
+                    >
+                      {i < boltzStepIndex ? "✓ " : i === boltzStepIndex ? "▶ " : ""}
+                      {s.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Endereço de depósito — mostrar enquanto aguardando */}
+              {clientDepositAddress && boltzStatus !== "paid_out" && boltzStatus !== "error" && (
                 <>
                   <div className="client-inline-copy">
                     <p>
@@ -640,61 +672,80 @@ export function ClientAreaPage() {
                       className="copy-icon-button"
                       aria-label="Copiar valor"
                       onClick={() => navigator.clipboard.writeText(boltzExpectedBtc ?? "")}
-                    >⧉</button>
+                    >
+                      ⧉
+                    </button>
                   </div>
                   <div style={{ margin: "0.75rem 0" }}>
-                    <AddressQRCode value={boltzLockupAddress} size={160} />
+                    <AddressQRCode value={clientDepositAddress} size={160} />
                   </div>
                   <div className="client-inline-copy">
                     <p>
                       Em{" "}
-                      <span className="client-highlight-address">{boltzLockupAddress}</span>
+                      <span className="client-highlight-address">{clientDepositAddress}</span>
                     </p>
                     <button
                       type="button"
                       className="copy-icon-button"
                       aria-label="Copiar endereço de depósito"
-                      onClick={() => navigator.clipboard.writeText(boltzLockupAddress)}
-                    >⧉</button>
+                      onClick={() => navigator.clipboard.writeText(clientDepositAddress)}
+                    >
+                      ⧉
+                    </button>
                   </div>
                   <p className="panel-hint">
-                    <a href={mempoolAddress(boltzLockupAddress)} target="_blank" rel="noreferrer">
+                    <a href={mempoolAddress(clientDepositAddress)} target="_blank" rel="noreferrer">
                       Ver endereço de depósito no mempool ↗
                     </a>
                   </p>
                 </>
-              ) : null}
+              )}
+
+              {/* Tx de encaminhamento para Boltz — aparece quando detectada */}
+              {boltzLockupTxId && (
+                <p className="panel-hint">
+                  <a href={mempoolTx(boltzLockupTxId)} target="_blank" rel="noreferrer">
+                    Ver transação on-chain (encaminhamento para Boltz) ↗
+                  </a>
+                </p>
+              )}
+
               {boltzStatus === "paid_out" ? (
                 <div className="client-success-box">
                   <p className="client-success-title">Invoice paga com sucesso ⚡</p>
-                  {liveBoltz?.lockup_tx_id && (
+                  {boltzLockupTxId && (
                     <p className="panel-hint">
-                      <a href={mempoolTx(liveBoltz.lockup_tx_id)} target="_blank" rel="noreferrer">
-                        Ver transação de depósito no mempool ↗
+                      <a href={mempoolTx(boltzLockupTxId)} target="_blank" rel="noreferrer">
+                        Ver transação on-chain ↗
                       </a>
                     </p>
+                  )}
+                  {boltzPreimage && (
+                    <>
+                      <p style={{ fontSize: "0.75rem", margin: "0.5rem 0 0.2rem", color: "var(--mx-muted)" }}>
+                        Prova de pagamento (preimage):
+                      </p>
+                      <div className="client-inline-copy" style={{ alignItems: "flex-start" }}>
+                        <code style={{ fontSize: "0.67rem", wordBreak: "break-all", flex: 1 }}>
+                          {boltzPreimage}
+                        </code>
+                        <button
+                          type="button"
+                          className="copy-icon-button"
+                          aria-label="Copiar preimage"
+                          onClick={() => navigator.clipboard.writeText(boltzPreimage)}
+                        >
+                          ⧉
+                        </button>
+                      </div>
+                    </>
                   )}
                 </div>
               ) : boltzStatus === "error" ? (
-                <p className="error">Swap falhou. Tente novamente ou entre em contato.</p>
-              ) : boltzStatus === "deposit_detected" || boltzStatus === "provider_processing" ? (
-                <div>
-                  <p className="panel-hint" style={{ marginBottom: "0.4rem" }}>
-                    {boltzStatus === "deposit_detected"
-                      ? "⏳ Depósito detectado — aguardando confirmação na rede..."
-                      : "⚡ Confirmado — processando pagamento Lightning..."}
-                  </p>
-                  {liveBoltz?.lockup_tx_id && (
-                    <p className="panel-hint">
-                      <a href={mempoolTx(liveBoltz.lockup_tx_id)} target="_blank" rel="noreferrer">
-                        Ver transação de depósito no mempool ↗
-                      </a>
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="panel-hint">⏳ Aguardando depósito no endereço acima...</p>
-              )}
+                <p className="error">
+                  Swap falhou. Verifique no Boltz Exchange ou entre em contato.
+                </p>
+              ) : null}
             </div>
           ) : liveOrder ? (
             <div className="client-order-card-content">
