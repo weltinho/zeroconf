@@ -50,12 +50,13 @@ type GetBoltzOrderResponse = {
   order_id: number;
   status: string;
   boltz_swap_id: string;
-  our_deposit_address: string | null;   // endereço onde cliente deposita (nossa wallet)
-  deposit_btc_address: string | null;   // lockup address da Boltz
-  required_deposit_sats: number | null; // total a depositar incluindo taxas
+  our_deposit_address: string | null;
+  deposit_btc_address: string | null;
+  required_deposit_sats: number | null;
   expected_onchain_amount_sat: number | null;
   status_raw: string | null;
-  lockup_tx_id: string | null;
+  deposit_tx_id: string | null;         // tx do cliente → nossa wallet
+  lockup_tx_id: string | null;          // tx nossa → lockup Boltz
   preimage: string | null;
 };
 
@@ -389,16 +390,12 @@ export function ClientAreaPage() {
   const liveBoltz = boltzOrder ?? boltzCreated;
   const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
-  // Endereço onde o cliente deposita BTC para nós
   const clientDepositAddress = boltzCreated?.deposit_btc_address ?? boltzOrder?.our_deposit_address ?? null;
-  // Total que o cliente precisa depositar (inclui todas as taxas)
   const boltzExpectedSat = boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null;
   const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
-  // Txid da nossa tx de encaminhamento para o lockup Boltz
   const boltzLockupTxId = boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null;
-  // Prova de pagamento Lightning (preimage)
+  const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
   const boltzPreimage = boltzOrder?.preimage ?? null;
-  // Passo atual no fluxo (−1 se status desconhecido/error)
   const boltzStepIndex = BOLTZ_STEPS.findIndex((s) => s.key === boltzStatus);
 
   // Preview ao vivo — extrai sats da invoice BOLT11.
@@ -701,11 +698,20 @@ export function ClientAreaPage() {
                 </>
               )}
 
-              {/* Tx de encaminhamento para Boltz — aparece quando detectada */}
+              {/* Tx do cliente → nossa wallet (aparece após depósito detectado) */}
+              {boltzDepositTxId && (
+                <p className="panel-hint">
+                  <a href={mempoolTx(boltzDepositTxId)} target="_blank" rel="noreferrer">
+                    Ver depósito do cliente no mempool ↗
+                  </a>
+                </p>
+              )}
+
+              {/* Tx de encaminhamento nossa → lockup Boltz */}
               {boltzLockupTxId && (
                 <p className="panel-hint">
                   <a href={mempoolTx(boltzLockupTxId)} target="_blank" rel="noreferrer">
-                    Ver transação on-chain (encaminhamento para Boltz) ↗
+                    Ver encaminhamento para Boltz no mempool ↗
                   </a>
                 </p>
               )}
@@ -716,7 +722,14 @@ export function ClientAreaPage() {
                   {boltzLockupTxId && (
                     <p className="panel-hint">
                       <a href={mempoolTx(boltzLockupTxId)} target="_blank" rel="noreferrer">
-                        Ver transação on-chain ↗
+                        Ver encaminhamento para Boltz no mempool ↗
+                      </a>
+                    </p>
+                  )}
+                  {boltzDepositTxId && (
+                    <p className="panel-hint">
+                      <a href={mempoolTx(boltzDepositTxId)} target="_blank" rel="noreferrer">
+                        Ver depósito do cliente no mempool ↗
                       </a>
                     </p>
                   )}

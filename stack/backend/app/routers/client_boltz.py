@@ -298,6 +298,7 @@ class GetBoltzOrderResponse(BaseModel):
     required_deposit_sats: int | None = None    # total que o cliente precisa depositar (inclui nossas taxas)
     expected_onchain_amount_sat: int | None     # valor que a Boltz espera receber de nós
     status_raw: str | None
+    deposit_tx_id: str | None = None            # txid do depósito do cliente → nossso endereço
     lockup_tx_id: str | None = None             # txid da nossa tx de encaminhamento para Boltz
     preimage: str | None = None                 # prova de pagamento Lightning (disponível após paid_out)
 
@@ -336,6 +337,10 @@ async def get_boltz_order(
         except Exception:
             pass
 
+    # Fallback: usar payout_txid (nossa tx de encaminhamento) enquanto Boltz não confirma.
+    if not lockup_tx_id and order.payout_txid:
+        lockup_tx_id = order.payout_txid
+
     return GetBoltzOrderResponse(
         order_id=order.id,
         status=order.status,
@@ -345,6 +350,7 @@ async def get_boltz_order(
         required_deposit_sats=order.required_deposit_sats,
         expected_onchain_amount_sat=boltz.expected_onchain_amount_sat if boltz else None,
         status_raw=boltz.status_raw if boltz else None,
+        deposit_tx_id=boltz.deposit_tx_id if boltz else None,
         lockup_tx_id=lockup_tx_id,
         preimage=preimage,
     )
