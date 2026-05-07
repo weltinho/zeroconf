@@ -96,10 +96,15 @@ async def bitrefill_list_products(
     start: int = 0,
     limit: int = 50,
     category: Optional[str] = None,
+    product_type: Optional[str] = None,
     include_test_products: bool = False,
     transport: Optional[httpx.BaseTransport] = None,
 ) -> dict[str, Any]:
-    """GET /products — catálogo paginado."""
+    """GET /products — catálogo paginado.
+
+    Docs «Searching Products»: gift cards via ``type=gift_card``; não usar ``category=gift_card``.
+    """
+
     params: dict[str, Any] = {
         "start": start,
         "limit": min(max(1, limit), 50),
@@ -108,6 +113,8 @@ async def bitrefill_list_products(
     }
     if category:
         params["category"] = category
+    if product_type:
+        params["type"] = product_type
     return await _request("GET", "/products", params=params, transport=transport)
 
 

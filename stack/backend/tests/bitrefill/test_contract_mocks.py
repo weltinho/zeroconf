@@ -70,6 +70,24 @@ async def test_list_products_query_string() -> None:
 
 
 @pytest.mark.asyncio
+async def test_list_products_sends_type_for_gift_cards() -> None:
+    url_holder: dict[str, str] = {}
+
+    async def capture(request: httpx.Request) -> httpx.Response:
+        url_holder["url"] = str(request.url)
+        return httpx.Response(200, json={"meta": {}, "data": []})
+
+    await bitrefill_list_products(
+        country="BR",
+        product_type="gift_card",
+        include_test_products=False,
+        transport=httpx.MockTransport(capture),
+    )
+    assert "type=gift_card" in url_holder["url"]
+    assert "category=" not in url_holder["url"]
+
+
+@pytest.mark.asyncio
 async def test_create_invoice_posts_json_body() -> None:
     received: dict[str, bytes | str] = {}
 

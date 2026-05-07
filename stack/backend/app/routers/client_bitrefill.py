@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Optional
-from urllib.parse import parse_qs, urlparse
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -20,15 +19,46 @@ router = APIRouter(prefix="/client/bitrefill", tags=["client-bitrefill"])
 
 DEFAULT_CATALOG_COUNTRY = "BR"
 
-# Agrupamentos enviados à API como `category` (CSV onde aplicável): label curto PT.
-CATALOG_CATEGORY_OPTIONS: tuple[dict[str, str], ...] = (
-    {"slug": "", "label": "Todas"},
-    {"slug": "refill", "label": "Recarga celular"},
-    {"slug": "streaming,entertainment", "label": "Streaming / entretenimento"},
-    {"slug": "games", "label": "Jogos"},
-    {"slug": "ecommerce,retail,gift_card", "label": "Gift cards / varejo"},
-    {"slug": "esim,SIM,data", "label": "Dados / eSIM"},
+# Por linha: slug devolvido ao frontend, label PT, ``product_type`` (query ``type`` na Bitrefill), ``category`` (CSV).
+# Ver https://docs.bitrefill.com/docs/searching-products — gift cards usam ``type=gift_card``, não ``category``.
+_CATALOG_FILTERS_ROWS: tuple[tuple[str, str, Optional[str], Optional[str]], ...] = (
+    ("", "Todas", None, None),
+    ("phone_refill", "Recarga celular", "phone_refill", None),
+    ("streaming_ent", "Streaming / entretenimento", None, "streaming,entertainment"),
+    ("games", "Jogos", None, "games"),
+    ("gift_card", "Gift cards / varejo", "gift_card", None),
+    ("esim", "Dados / eSIM", "esim", None),
 )
+
+# Slugs antigos enviados pelo frontend antes do mapeamento type vs category.
+_LEGACY_SLUG_CANONICAL: dict[str, str] = {
+    "refill": "phone_refill",
+    "ecommerce,retail,gift_card": "gift_card",
+    "ecommerce,retail,giftcard": "gift_card",
+}
+
+_FILTER_BY_SLUG: dict[str, tuple[Optional[str], Optional[str]]] = {
+    row[0]: (row[2], row[3]) for row in _CATALOG_FILTERS_ROWS
+}
+
+
+def _catalog_category_options_public() -> list[dict[str, str]]:
+    return [{"slug": s, "label": lab} for s, lab, _, _ in _CATALOG_FILTERS_ROWS]
+
+
+def _resolve_catalog_filter(category_slug: str) -> tuple[Optional[str], Optional[str]]:
+    """Devolve ``(product_type, category)`` para a API Bitrefill (só um costuma ser não-nulo)."""
+
+    slug = category_slug.strip()
+    if not slug:
+        return (None, None)
+    canon = _LEGACY_SLUG_CANONICAL.get(slug, slug)
+    if canon not in _FILTER_BY_SLUG:
+        raise HTTPException(
+            status_code=422,
+            detail=f"filtro de catálogo desconhecido: {category_slug!r}",
+        )
+    return _FILTER_BY_SLUG[canon]
 
 
 def _require_bitrefill() -> None:
@@ -51,6 +81,8 @@ def _next_start_from_meta(meta: Any) -> Optional[int]:
     if not nxt or not isinstance(nxt, str):
         return None
     try:
+        from urllib.parse import parse_qs, urlparse
+
         q = parse_qs(urlparse(nxt).query)
         starts = q.get("start", [])
         if not starts:
@@ -101,10 +133,10 @@ async def catalog_countries() -> dict[str, Any]:
 
 @router.get("/catalog/categories")
 async def catalog_categories() -> dict[str, Any]:
-    """Filtros de catálogo (slugs combinados onde a Bitrefill aceita CSV)."""
+    """Filtros de catálogo (slugs combinados onde a Bitrefill aceita ``category``; gift cards via ``type``)."""
 
     _require_bitrefill()
-    return {"data": list(CATALOG_CATEGORY_OPTIONS)}
+    return {"data": _catalog_category_options_public()}
 
 
 @router.get("/catalog/products")
@@ -129,7 +161,11 @@ async def catalog_products(
     }
     cat_trim = category.strip()
     if cat_trim:
-        kw["category"] = cat_trim
+        product_type_bitrefill, category_bitrefill = _resolve_catalog_filter(cat_trim)
+        if product_type_bitrefill:
+            kw["product_type"] = product_type_bitrefill
+        if category_bitrefill:
+            kw["category"] = category_bitrefill
 
     try:
         raw = await bitrefill_list_products(**kw)

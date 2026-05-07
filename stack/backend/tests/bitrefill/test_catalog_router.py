@@ -47,6 +47,26 @@ async def test_catalog_countries_brazil(bitrefill_conf: None) -> None:
 
 
 @pytest.mark.asyncio
+async def test_catalog_products_maps_gift_card_slug_to_bitrefill_type(
+    bitrefill_conf: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    captured: dict[str, Any] = {}
+
+    async def fake_list_products(**kwargs: Any) -> dict[str, Any]:
+        captured.clear()
+        captured.update(kwargs)
+        return {"meta": {}, "data": []}
+
+    monkeypatch.setattr(client_bitrefill, "bitrefill_list_products", fake_list_products)
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        r = await ac.get("/client/bitrefill/catalog/products?category=gift_card&country=BR")
+    assert r.status_code == 200
+    assert captured.get("product_type") == "gift_card"
+    assert captured.get("category") is None
+
+
+@pytest.mark.asyncio
 async def test_catalog_products_normalizes(bitrefill_conf: None, monkeypatch: pytest.MonkeyPatch) -> None:
     async def fake_list_products(**kwargs: Any) -> dict[str, Any]:
         assert kwargs.get("country") == "BR"

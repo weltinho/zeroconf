@@ -86,9 +86,9 @@ function bitrefillFetchErrorMessage(status: number, detail: string): string {
   return d;
 }
 
-function catalogProductsPath(start: number, categorySlug: string, countryCode: string): string {
+function catalogProductsPath(categorySlug: string, countryCode: string): string {
   const q = new URLSearchParams({
-    start: String(start),
+    start: "0",
     limit: "50",
     country: countryCode.trim().toUpperCase().slice(0, 2) || "BR",
   });
@@ -227,13 +227,11 @@ export function ClientAreaPage() {
   ]);
   const [comprasCategories, setComprasCategories] = useState<CatalogCategoryOpt[]>([]);
   const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
-  const [comprasNextStart, setComprasNextStart] = useState<number | null>(null);
   const [comprasProductId, setComprasProductId] = useState("");
   const [comprasPackageId, setComprasPackageId] = useState("");
   const [comprasEmail, setComprasEmail] = useState("");
   const [comprasPhone, setComprasPhone] = useState("");
   const [bitrefillLoading, setBitrefillLoading] = useState(false);
-  const [bitrefillLoadingMore, setBitrefillLoadingMore] = useState(false);
   const [bitrefillError, setBitrefillError] = useState<string | null>(null);
 
   const pollTimerRef = useRef<number | null>(null);
@@ -350,7 +348,6 @@ export function ClientAreaPage() {
     if (mode !== "compras" || chain === "signet") return;
     setComprasProductId("");
     setComprasPackageId("");
-    setComprasNextStart(null);
     setBitrefillError(null);
   }, [comprasCategorySlug, comprasCountryCode, mode, chain]);
 
@@ -362,7 +359,7 @@ export function ClientAreaPage() {
 
     async function load() {
       try {
-        const productsPath = catalogProductsPath(0, comprasCategorySlug, comprasCountryCode);
+        const productsPath = catalogProductsPath(comprasCategorySlug, comprasCountryCode);
         const [countriesRes, catRes, prodRes] = await Promise.all([
           fetch(apiUrl("/client/bitrefill/catalog/countries")),
           fetch(apiUrl("/client/bitrefill/catalog/categories")),
@@ -397,12 +394,9 @@ export function ClientAreaPage() {
         const cats = ((await catRes.json()) as { data?: CatalogCategoryOpt[] }).data ?? [];
         const pj = (await prodRes.json()) as {
           products?: CatalogProduct[];
-          meta?: { next_start?: number | null };
         };
         setComprasCategories(cats);
         setComprasProducts(pj.products ?? []);
-        const ns = pj.meta?.next_start;
-        setComprasNextStart(typeof ns === "number" ? ns : null);
       } catch (e) {
         if (!cancelled) {
           setBitrefillError(e instanceof Error ? e.message : "Erro ao carregar catálogo Bitrefill");
@@ -416,40 +410,6 @@ export function ClientAreaPage() {
       cancelled = true;
     };
   }, [mode, chain, comprasCategorySlug, comprasCountryCode]);
-
-  const loadMoreComprasProducts = useCallback(async () => {
-    if (
-      comprasNextStart === null ||
-      bitrefillLoadingMore ||
-      chain === "signet" ||
-      mode !== "compras"
-    )
-      return;
-    setBitrefillLoadingMore(true);
-    try {
-      const r = await fetch(
-        apiUrl(catalogProductsPath(comprasNextStart, comprasCategorySlug, comprasCountryCode)),
-      );
-      const b = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const raw = typeof b?.detail === "string" ? b.detail : "";
-        throw new Error(bitrefillFetchErrorMessage(r.status, raw || `HTTP ${r.status}`));
-      }
-      const pj = b as { products?: CatalogProduct[]; meta?: { next_start?: number | null } };
-      const more = pj.products ?? [];
-      setComprasProducts((prev) => {
-        const seen = new Set(prev.map((p) => String(p.id)));
-        const extra = more.filter((p) => p.id != null && !seen.has(String(p.id)));
-        return [...prev, ...extra];
-      });
-      const ns = pj.meta?.next_start;
-      setComprasNextStart(typeof ns === "number" ? ns : null);
-    } catch (e) {
-      setBitrefillError(e instanceof Error ? e.message : "Erro ao carregar mais produtos");
-    } finally {
-      setBitrefillLoadingMore(false);
-    }
-  }, [comprasNextStart, comprasCategorySlug, comprasCountryCode, bitrefillLoadingMore, chain, mode]);
 
   useEffect(() => {
     if (initialOrderLoadedRef.current) {
@@ -913,16 +873,7 @@ export function ClientAreaPage() {
                   />
                 </label>
 
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "0.5rem", alignItems: "center" }}>
-                  <button
-                    type="button"
-                    disabled={comprasNextStart === null || bitrefillLoadingMore || chain === "signet"}
-                    onClick={() => void loadMoreComprasProducts()}
-                  >
-                    {bitrefillLoadingMore ? "Carregando…" : "Carregar mais produtos"}
-                  </button>
-                  {bitrefillLoading ? <span className="panel-hint">A atualizar catálogo…</span> : null}
-                </div>
+                {bitrefillLoading ? <p className="panel-hint" style={{ margin: 0 }}>A atualizar catálogo…</p> : null}
               </div>
             )}
           </section>
@@ -945,7 +896,6 @@ export function ClientAreaPage() {
                       telefone: comprasNeedsPhone ? comprasPhone || null : undefined,
                     },
                     catálogo_carregado: comprasProducts.length,
-                    próxima_página: comprasNextStart,
                   },
                   null,
                   2,
