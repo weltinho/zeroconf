@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "re
 import { Link, useParams } from "react-router-dom";
 import { apiUrl } from "../api/url";
 import { AppLogo } from "../components/AppLogo";
+import AddressQRCode from "../components/AddressQRCode";
 import { getUiText } from "../i18n";
 
 type CreateOrderResponse = {
@@ -86,6 +87,16 @@ function parseBolt11Sats(invoice: string): number | null {
   return sats > 0 ? sats : null;
 }
 
+type LightningInputType = "invoice" | "lightning_address" | "lnurl" | "unknown";
+
+function detectLightningInputType(value: string): LightningInputType {
+  const v = value.trim().toLowerCase();
+  if (v.startsWith("lnbc") || v.startsWith("lntb") || v.startsWith("lnbcrt") || v.startsWith("lntbs")) return "invoice";
+  if (v.startsWith("lnurl1")) return "lnurl";
+  if (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return "lightning_address";
+  return "unknown";
+}
+
 const SATS_PER_BTC = 100_000_000;
 
 function satsToBtc(sats: number): string {
@@ -136,6 +147,7 @@ export function ClientAreaPage() {
 
   const [mode, setMode] = useState<"onchain" | "lightning">("onchain");
   const [invoice, setInvoice] = useState("");
+  const [lnAmount, setLnAmount] = useState(""); // sats, usado quando input é lightning address ou lnurl
 
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
@@ -295,16 +307,33 @@ export function ClientAreaPage() {
     setBoltzOrder(null);
     setCreating(true);
     try {
+      const inputType = detectLightningInputType(invoice);
+      let body: Record<string, unknown>;
+      if (inputType === "invoice") {
+        body = { invoice: invoice.trim() };
+      } else {
+        const amtSats = parseInt(lnAmount, 10);
+        if (!amtSats || amtSats <= 0) throw new Error("Informe o valor em sats");
+        body = { lightning_destination: invoice.trim(), amount_sats: amtSats };
+      }
       const r = await fetch(apiUrl("/client/boltz/orders"), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ invoice: invoice.trim() }),
+        body: JSON.stringify(body),
       });
-      const body = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(body?.detail ?? `HTTP ${r.status}`);
-      const resp = body as CreateBoltzOrderResponse;
-      setBoltzCreated(resp);
-      void pollBoltzOrder(resp.order_id);
+      const resp = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        // detail pode ser string (nossa mensagem) ou array Pydantic [{msg: "..."}]
+        const detail = resp?.detail;
+        const msg = typeof detail === "string"
+          ? detail
+          : Array.isArray(detail)
+            ? detail.map((e: { msg?: string }) => e.msg ?? "").filter(Boolean).join("; ") || `HTTP ${r.status}`
+            : `HTTP ${r.status}`;
+        throw new Error(msg);
+      }
+      setBoltzCreated(resp as CreateBoltzOrderResponse);
+      void pollBoltzOrder((resp as CreateBoltzOrderResponse).order_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao criar swap Boltz");
     } finally {
@@ -364,8 +393,19 @@ export function ClientAreaPage() {
   const boltzStatusRaw = boltzOrder?.status_raw ?? null;
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
 
-  // Preview ao vivo da invoice — calculado antes de criar o swap.
-  const invoiceSats = useMemo(() => parseBolt11Sats(invoice), [invoice]);
+  // Detecta o tipo de input da aba Lightning.
+  const lightningInputType = useMemo(() => detectLightningInputType(invoice), [invoice]);
+  const needsAmountField = lightningInputType === "lightning_address" || lightningInputType === "lnurl";
+
+  // Preview ao vivo — para invoice BOLT11 extrai os sats; para lightning address/lnurl usa lnAmount.
+  const invoiceSats = useMemo(() => {
+    if (lightningInputType === "invoice") return parseBolt11Sats(invoice);
+    if (needsAmountField) {
+      const n = parseInt(lnAmount, 10);
+      return n > 0 ? n : null;
+    }
+    return null;
+  }, [lightningInputType, invoice, lnAmount, needsAmountField]);
   const invoicePreview = useMemo(() => {
     if (!invoiceSats || !boltzFees) return null;
     const percentFee = Math.ceil((invoiceSats * boltzFees.percentage) / 100);
@@ -498,16 +538,35 @@ export function ClientAreaPage() {
             ) : (
               <form onSubmit={onCreateBoltz} style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Invoice BOLT11</span>
+                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>
+                    {needsAmountField ? "Lightning Address / LNURL" : "Invoice BOLT11"}
+                  </span>
                   <input
                     value={invoice}
-                    onChange={(e) => setInvoice(e.target.value)}
-                    placeholder="lnbc..."
+                    onChange={(e) => { setInvoice(e.target.value); setError(""); }}
+                    placeholder="lnbc... ou user@dominio.com ou lnurl1..."
                     style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
                   />
                 </label>
+
+                {needsAmountField && (
+                  <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
+                    <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Valor a enviar (sats)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={lnAmount}
+                      onChange={(e) => { setLnAmount(e.target.value); setError(""); }}
+                      placeholder="ex: 10000"
+                      style={{ fontFamily: "monospace", fontSize: "0.82rem" }}
+                    />
+                  </label>
+                )}
+
                 <p className="panel-hint" style={{ margin: 0 }}>
-                  Cole a invoice Lightning. Vamos converter seu depósito BTC automaticamente.
+                  {needsAmountField
+                    ? "Informe um Lightning Address (user@domínio) ou LNURL e o valor em sats."
+                    : "Cole a invoice Lightning. Vamos converter seu depósito BTC automaticamente."}
                 </p>
 
                 {invoicePreview && (
@@ -582,6 +641,9 @@ export function ClientAreaPage() {
                       aria-label="Copiar valor"
                       onClick={() => navigator.clipboard.writeText(boltzExpectedBtc ?? "")}
                     >⧉</button>
+                  </div>
+                  <div style={{ margin: "0.75rem 0" }}>
+                    <AddressQRCode value={boltzLockupAddress} size={160} />
                   </div>
                   <div className="client-inline-copy">
                     <p>
@@ -667,6 +729,9 @@ export function ClientAreaPage() {
                 >
                   ⧉
                 </button>
+              </div>
+              <div style={{ margin: "0.75rem 0" }}>
+                <AddressQRCode value={liveOrder.deposit_btc_address} size={160} />
               </div>
               <p className="panel-hint">
                 Você receberá <span className="client-highlight-value">{outputBtc} BTC</span> em{" "}

@@ -111,11 +111,11 @@ class SwapOrderProcessor:
                     "order matched from incoming wallet tx",
                     {"event_txid": txid, "deposit_btc_address": addr},
                 )
-                await self._try_payout_order(session, wallet, order)
+                await self._try_payout_order(session, wallet, order, event_txid=txid)
 
             await session.commit()
 
-    async def _try_payout_order(self, session: AsyncSession, wallet: str, order: SwapOrder) -> None:
+    async def _try_payout_order(self, session: AsyncSession, wallet: str, order: SwapOrder, event_txid: str | None = None) -> None:
         order.status = "processing"
         await log_swap_step(
             session,
@@ -175,6 +175,7 @@ class SwapOrderProcessor:
 
         if total_sats < int(order.required_deposit_sats):
             order.status = "awaiting_deposit"
+            order.actual_deposit_sats = total_sats
             order.last_error = (
                 f"underpaid: got {total_sats} sats, need {int(order.required_deposit_sats)} sats"
             )
@@ -353,10 +354,17 @@ class SwapOrderProcessor:
             return
 
         order.payout_txid = str(payout_txid)
-        # Para ordens Boltz, o status pós-forward é gerenciado pelo boltz_poller.
-        # Marcamos apenas que o depósito foi encaminhado; o poller atualiza para paid_out/error.
+        # Para ordens Boltz, salvar o txid do depósito do cliente e marcar status intermediário.
         if order.provider == "boltz":
             order.status = "deposit_detected"
+            # Salva o deposit_tx_id (cliente → nós) no registo Boltz.
+            if event_txid:
+                from sqlalchemy import select as _select
+                from app.models import SwapOrderBoltz as _SOB
+                res = await session.execute(_select(_SOB).where(_SOB.swap_order_id == order.id))
+                boltz_detail = res.scalar_one_or_none()
+                if boltz_detail:
+                    boltz_detail.deposit_tx_id = event_txid
         else:
             order.status = "confirming"
         order.last_error = None

@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.boltz_client import BoltzClientError, create_submarine_swap, generate_refund_keypair, get_submarine_pairs
 from app.db import get_session
+from app.lnurl_client import LnurlError, resolve_to_invoice
 from app.models import SwapOrder, SwapOrderBoltz
 from app.settings import settings
 from app.swap_logs import log_swap_step
@@ -115,7 +116,11 @@ async def get_fees() -> Any:
 
 
 class CreateBoltzOrderRequest(BaseModel):
-    invoice: str = Field(..., min_length=10, description="Invoice BOLT11 a ser paga via Lightning.")
+    # Opção 1: invoice BOLT11 direta
+    invoice: str | None = Field(None, description="Invoice BOLT11 a ser paga via Lightning.")
+    # Opção 2: Lightning Address (user@domain) ou LNURL + valor em sats
+    lightning_destination: str | None = Field(None, description="Lightning Address ou LNURL.")
+    amount_sats: int | None = Field(None, gt=0, description="Valor em sats (obrigatório com lightning_destination).")
 
 
 class CreateBoltzOrderResponse(BaseModel):
@@ -134,7 +139,23 @@ async def create_boltz_order(
     if not settings.boltz_enabled:
         raise HTTPException(status_code=503, detail="Boltz integration is disabled")
 
-    invoice = req.invoice.strip()
+    # Resolver destino: invoice direta ou Lightning Address/LNURL
+    if req.invoice and req.invoice.strip():
+        invoice = req.invoice.strip()
+    elif req.lightning_destination and req.lightning_destination.strip():
+        if not req.amount_sats or req.amount_sats <= 0:
+            raise HTTPException(status_code=400, detail="amount_sats é obrigatório com lightning_destination")
+        try:
+            invoice = await resolve_to_invoice(
+                destination=req.lightning_destination.strip(),
+                amount_sats=req.amount_sats,
+                comment="ZeroConf swap",
+            )
+        except LnurlError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+    else:
+        raise HTTPException(status_code=400, detail="Informe invoice ou lightning_destination")
+
     if not invoice:
         raise HTTPException(status_code=400, detail="invoice is required")
 
@@ -184,9 +205,16 @@ async def create_boltz_order(
         )
     except BoltzClientError as exc:
         logger.error("Boltz create_submarine_swap failed: %s | payload=%s", exc, exc.payload)
-        raise HTTPException(
-            status_code=422, detail=f"Boltz rejected swap: {exc}"
-        ) from exc
+        raw = str(exc).lower()
+        if "expiry too short" in raw or "invoice expiry" in raw:
+            detail = (
+                "A carteira Lightning de destino gerou uma invoice com validade muito curta "
+                "(600s). Tente usar um endereço Lightning de outro provedor ou cole uma "
+                "invoice BOLT11 direta com validade maior."
+            )
+        else:
+            detail = f"Boltz rejected swap: {exc}"
+        raise HTTPException(status_code=422, detail=detail) from exc
 
     boltz_swap_id: str = swap_data.get("id", "")
     lockup_address: str = swap_data.get("address", "")

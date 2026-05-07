@@ -51,6 +51,8 @@ class SwapOrder(Base):
 
     # Quanto esperamos receber para cobrir output + fee.
     required_deposit_sats: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    # Quanto o cliente realmente depositou (soma dos UTXOs encontrados).
+    actual_deposit_sats: Mapped[int | None] = mapped_column(BigInteger(), nullable=True)
     fee_rate_sat_vb: Mapped[int] = mapped_column(BigInteger(), nullable=False, server_default="2")
 
     # Provedor: 'internal' (fluxo padrão) ou 'boltz' (submarine swap externo).
@@ -127,6 +129,7 @@ class SwapOrderBoltz(Base):
     refund_privkey_hex: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     # TXIDs on-chain do swap: depósito do cliente → lockup Boltz e claim Boltz.
+    deposit_tx_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     lockup_tx_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     claim_tx_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
