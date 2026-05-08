@@ -1275,6 +1275,10 @@ export function ClientAreaPage() {
                 </p>
               )}
 
+              <p className="panel-hint">
+                Status Boltz: <code>{boltzOrder?.status_raw ?? "—"}</code>
+              </p>
+
               {boltzStatus === "paid_out" ? (
                 <div className="client-success-box">
                   <p className="client-success-title">Invoice paga com sucesso ⚡</p>
