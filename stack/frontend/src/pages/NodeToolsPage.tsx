@@ -32,7 +32,14 @@ type WalletPayload = {
     address: string;
     utxo_count: number;
     total_btc: number;
-    utxos: unknown[];
+    utxos: Array<{
+      txid?: string;
+      vout?: number;
+      amount?: number;
+      confirmations?: number;
+      spendable?: boolean;
+      safe?: boolean;
+    }>;
   }>;
 };
 
@@ -144,6 +151,33 @@ export function NodeToolsPage() {
     return events.filter((e) => e.topic === topicFilter);
   }, [events, topicFilter]);
 
+  const walletUtxoRows = useMemo(() => {
+    if (!wallet) return [];
+    const rows: Array<{
+      address: string;
+      txid: string;
+      vout: number;
+      amount: number;
+      confirmations: number;
+      spendable: boolean;
+      safe: boolean;
+    }> = [];
+    for (const byAddr of wallet.unspent_by_address || []) {
+      for (const u of byAddr.utxos || []) {
+        rows.push({
+          address: byAddr.address,
+          txid: String(u.txid || ""),
+          vout: Number(u.vout || 0),
+          amount: Number(u.amount || 0),
+          confirmations: Number(u.confirmations || 0),
+          spendable: Boolean(u.spendable),
+          safe: Boolean(u.safe),
+        });
+      }
+    }
+    return rows;
+  }, [wallet]);
+
   function connectWs() {
     if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) {
       return;
@@ -240,6 +274,40 @@ export function NodeToolsPage() {
         <section className="panel panel-rpc">
           <h2>{t.nodeWalletHeading}</h2>
           <p className="panel-hint panel-hint-tight">{t.nodeWalletHint}</p>
+          <div className="adm-swaps-table-wrap" style={{ marginBottom: "0.65rem" }}>
+            <table className="adm-swaps-table">
+              <thead>
+                <tr>
+                  <th>Endereço</th>
+                  <th>Txid</th>
+                  <th>Vout</th>
+                  <th>BTC</th>
+                  <th>Conf</th>
+                  <th>Spendable</th>
+                  <th>Safe</th>
+                </tr>
+              </thead>
+              <tbody>
+                {walletUtxoRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7}>Sem UTXOs disponíveis.</td>
+                  </tr>
+                ) : (
+                  walletUtxoRows.map((u, idx) => (
+                    <tr key={`${u.txid}:${u.vout}:${idx}`}>
+                      <td><code style={{ fontSize: "0.72rem" }}>{u.address}</code></td>
+                      <td><code style={{ fontSize: "0.72rem" }}>{u.txid || "-"}</code></td>
+                      <td>{u.vout}</td>
+                      <td>{u.amount.toFixed(8)}</td>
+                      <td>{u.confirmations}</td>
+                      <td>{u.spendable ? "sim" : "nao"}</td>
+                      <td>{u.safe ? "sim" : "nao"}</td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
           <pre className="panel-pre rpc-response-pre">
             {wallet
               ? JSON.stringify(wallet, null, 2)
