@@ -13,28 +13,28 @@ export function MatrixRain() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Caracteres Matrix (katakana + símbolos)
-    const matrixChars =
-      "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
-      "0123456789" +
-      "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ";
-
+    // Caracteres - mais foco em crypto, menos katakana
+    const matrixChars = "01アウカキセソタチツ";
     const cryptoChars = "₿⚡";
-    const fontSize = 16;
+    const fontSize = 18;
+    const columnSpacing = 50; // Espaçamento maior entre colunas
     let columns: number;
     let drops: number[];
     let speeds: number[];
+    let activeColumns: boolean[];
 
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      columns = Math.floor(canvas.width / fontSize);
+      columns = Math.floor(canvas.width / columnSpacing);
       drops = [];
       speeds = [];
+      activeColumns = [];
 
       for (let i = 0; i < columns; i++) {
         drops[i] = Math.random() * -50;
-        speeds[i] = 0.3 + Math.random() * 0.4; // Velocidade lenta e variada
+        speeds[i] = 0.2 + Math.random() * 0.3; // Mais lento
+        activeColumns[i] = Math.random() > 0.4; // Apenas 60% das colunas ativas
       }
     }
 
@@ -46,11 +46,13 @@ export function MatrixRain() {
       ctx.font = `bold ${fontSize}px monospace`;
 
       for (let i = 0; i < columns; i++) {
-        const x = i * fontSize;
+        if (!activeColumns[i]) continue; // Pula colunas inativas
+        
+        const x = i * columnSpacing;
         const y = drops[i] * fontSize;
 
-        // 3% chance de símbolo crypto
-        const isCrypto = Math.random() < 0.03;
+        // 25% chance de símbolo crypto - muito mais frequente
+        const isCrypto = Math.random() < 0.25;
         let char: string;
         
         if (isCrypto) {
@@ -75,19 +77,22 @@ export function MatrixRain() {
         ctx.fillText(char, x, y);
         ctx.shadowBlur = 0;
 
-        // Desenha trail de caracteres atrás
-        const trailLength = 20;
+        // Desenha trail de caracteres atrás - mais curto
+        const trailLength = 12;
         for (let j = 1; j <= trailLength; j++) {
           const trailY = y - j * fontSize;
           if (trailY < 0) continue;
 
           // Fade gradual
           const fade = 1 - j / trailLength;
-          const green = Math.floor(200 * fade);
+          const green = Math.floor(180 * fade);
           ctx.fillStyle = `rgb(0, ${green}, 0)`;
 
-          // Caractere aleatório para o trail
-          const trailChar = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+          // Mais chance de crypto no trail também (15%)
+          const trailIsCrypto = Math.random() < 0.15;
+          const trailChar = trailIsCrypto 
+            ? cryptoChars[Math.floor(Math.random() * cryptoChars.length)]
+            : matrixChars[Math.floor(Math.random() * matrixChars.length)];
           ctx.fillText(trailChar, x, trailY);
         }
 

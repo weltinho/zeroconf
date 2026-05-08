@@ -1,8 +1,7 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Efeito Matrix clássico com verde neon brilhante.
- * Inclui símbolos Bitcoin e Lightning ocasionais.
+ * Efeito Matrix discreto com símbolos Bitcoin/Lightning frequentes.
  */
 export function CryptoBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -13,43 +12,45 @@ export function CryptoBackground() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Caracteres Matrix (katakana + símbolos)
-    const matrixChars =
-      "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
-      "0123456789" +
-      "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ";
-
+    // Menos caracteres matrix, mais foco em crypto
+    const matrixChars = "01アウカキセソタチツ";
     const cryptoChars = "₿⚡";
-    const fontSize = 16;
+    const fontSize = 18;
+    const columnSpacing = 50; // Espaçamento maior = menos colunas
     let columns: number;
     let drops: number[];
     let speeds: number[];
+    let activeColumns: boolean[];
 
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      columns = Math.floor(canvas.width / fontSize);
+      columns = Math.floor(canvas.width / columnSpacing);
       drops = [];
       speeds = [];
+      activeColumns = [];
 
       for (let i = 0; i < columns; i++) {
         drops[i] = Math.random() * -50;
-        speeds[i] = 0.3 + Math.random() * 0.4;
+        speeds[i] = 0.2 + Math.random() * 0.3; // Mais lento
+        activeColumns[i] = Math.random() > 0.4; // Apenas 60% ativas
       }
     }
 
     function draw() {
-      // Trail effect
       ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
 
       for (let i = 0; i < columns; i++) {
-        const x = i * fontSize;
+        if (!activeColumns[i]) continue;
+
+        const x = i * columnSpacing;
         const y = drops[i] * fontSize;
 
-        const isCrypto = Math.random() < 0.03;
+        // 25% chance de crypto - bem mais frequente
+        const isCrypto = Math.random() < 0.25;
         let char: string;
 
         if (isCrypto) {
@@ -71,17 +72,21 @@ export function CryptoBackground() {
         ctx.fillText(char, x, y);
         ctx.shadowBlur = 0;
 
-        // Trail
-        const trailLength = 20;
+        // Trail mais curto
+        const trailLength = 12;
         for (let j = 1; j <= trailLength; j++) {
           const trailY = y - j * fontSize;
           if (trailY < 0) continue;
 
           const fade = 1 - j / trailLength;
-          const green = Math.floor(200 * fade);
+          const green = Math.floor(180 * fade);
           ctx.fillStyle = `rgb(0, ${green}, 0)`;
 
-          const trailChar = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+          // 15% crypto no trail
+          const trailIsCrypto = Math.random() < 0.15;
+          const trailChar = trailIsCrypto
+            ? cryptoChars[Math.floor(Math.random() * cryptoChars.length)]
+            : matrixChars[Math.floor(Math.random() * matrixChars.length)];
           ctx.fillText(trailChar, x, trailY);
         }
 
@@ -90,7 +95,7 @@ export function CryptoBackground() {
         if (drops[i] * fontSize > canvas.height + 200) {
           if (Math.random() > 0.98) {
             drops[i] = Math.random() * -30;
-            speeds[i] = 0.3 + Math.random() * 0.4;
+            speeds[i] = 0.2 + Math.random() * 0.3;
           }
         }
       }
