@@ -242,6 +242,8 @@ docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 
 Este repositório já entrega um MVP operacional completo para demo técnica:
 
+Atualmente, a aplicação está funcional e rodando com um node Bitcoin Core em mainnet em [`https://zconfcore.duckdns.org/`](https://zconfcore.duckdns.org/).
+
 - Fluxo cliente utilizável
 - Operação administrativa real
 - Integração Bitcoin Core ponta a ponta
