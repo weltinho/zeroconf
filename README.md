@@ -10,6 +10,8 @@ O objetivo é simples: provar um fluxo utilizável, auditável e rápido, com:
 - **MariaDB** (persistência operacional)
 - **Caddy** (HTTPS/proxy)
 
+**Demo em vídeo (hackathon):** [YouTube — gravação da apresentação](https://www.youtube.com/watch?v=Th0obsNnc_g)
+
 ---
 
 ## Visão geral da aplicação
@@ -242,7 +244,7 @@ docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 
 Este repositório já entrega um MVP operacional completo para demo técnica:
 
-Atualmente, a aplicação está funcional e rodando com um node Bitcoin Core em mainnet em [`https://zconfcore.duckdns.org/`](https://zconfcore.duckdns.org/).
+Atualmente, a aplicação está funcional e rodando com um node Bitcoin Core em mainnet em [`https://zconfcore.duckdns.org/`](https://zconfcore.duckdns.org/). Gravação da demo: [YouTube](https://www.youtube.com/watch?v=Th0obsNnc_g).
 
 - Fluxo cliente utilizável
 - Operação administrativa real
