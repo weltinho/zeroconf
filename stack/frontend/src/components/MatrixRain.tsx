@@ -1,13 +1,12 @@
 import { useEffect, useRef } from "react";
 
-const CHARS =
-  "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ₿ΞΣπ∞≡◊◇○●□■△▲▽▼";
-
-const FONT_SIZE = 14;
-const DRAW_INTERVAL_MS = 45;
+const CHARS = "01₿∞≡◊○●□△▼";
+const FONT_SIZE = 16;
+const DRAW_INTERVAL_MS = 80;
 
 /**
- * Matrix rain no estilo v0: denso, com profundidade por brilho e rastro curto.
+ * Efeito de fundo sutil — chuva de dados estilo fintech.
+ * Muito mais discreto que o Matrix original, apenas ambiência visual.
  */
 export function MatrixRain() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -31,34 +30,37 @@ export function MatrixRain() {
     function resizeCanvas() {
       el.width = window.innerWidth;
       el.height = window.innerHeight;
-      const columns = Math.max(Math.floor(el.width / FONT_SIZE), 12);
-      dropsRef.current = Array.from({ length: columns }, () => Math.random() * -100);
+      // Menos colunas para efeito mais esparso e elegante
+      const columns = Math.max(Math.floor(el.width / (FONT_SIZE * 3)), 8);
+      dropsRef.current = Array.from({ length: columns }, () => Math.random() * -50);
     }
 
     function draw() {
-      gl.fillStyle = "rgba(0, 5, 2, 0.05)";
+      // Fade mais forte para trilhas mais curtas e sutis
+      gl.fillStyle = "rgba(10, 15, 20, 0.12)";
       gl.fillRect(0, 0, el.width, el.height);
-      gl.font = `${FONT_SIZE}px "Share Tech Mono", monospace`;
+      gl.font = `${FONT_SIZE}px 'Inter', sans-serif`;
 
       for (let i = 0; i < dropsRef.current.length; i++) {
         const ch = charsArray[Math.floor(Math.random() * charsArray.length)];
-        const x = i * FONT_SIZE;
+        const x = i * FONT_SIZE * 3;
         const y = dropsRef.current[i] * FONT_SIZE;
 
         const brightness = Math.random();
-        if (brightness > 0.95) {
-          gl.fillStyle = "#ffffff";
-        } else if (brightness > 0.8) {
-          gl.fillStyle = "#00ff41";
+        // Paleta esmeralda sutil
+        if (brightness > 0.97) {
+          gl.fillStyle = "rgba(16, 185, 129, 0.6)"; // Emerald bright
+        } else if (brightness > 0.85) {
+          gl.fillStyle = "rgba(16, 185, 129, 0.25)"; // Emerald medium
         } else {
-          gl.fillStyle = "#008f11";
+          gl.fillStyle = "rgba(16, 185, 129, 0.08)"; // Emerald dim
         }
         gl.fillText(ch, x, y);
 
-        if (y > el.height && Math.random() > 0.975) {
+        if (y > el.height && Math.random() > 0.99) {
           dropsRef.current[i] = 0;
         }
-        dropsRef.current[i] += 1;
+        dropsRef.current[i] += 0.5;
       }
     }
 

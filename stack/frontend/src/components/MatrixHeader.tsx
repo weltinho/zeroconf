@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { AppLogo } from "./AppLogo";
+
 type Props =
   | {
       variant: "public";
@@ -24,17 +25,13 @@ export function MatrixHeader(props: Props) {
     return (
       <header className="matrix-header">
         <Link to="/" className="matrix-header-brand">
-          <AppLogo className="matrix-header-logo" variant="matrix" aria-label={props.logoAria} />
+          <AppLogo className="matrix-header-logo" variant="professional" aria-label={props.logoAria} />
         </Link>
         <nav className="matrix-header-nav" aria-label="Main">
-          <span className="matrix-nav-muted">
-            [{props.matrixNavFlux}]
-          </span>
-          <span className="matrix-nav-muted">
-            [{props.matrixNavInfo}]
-          </span>
+          <span className="matrix-nav-muted">{props.matrixNavFlux}</span>
+          <span className="matrix-nav-muted">{props.matrixNavInfo}</span>
           <Link to="/adm" className="matrix-nav-link matrix-nav-link-accent">
-            [{props.matrixNavAdm}]
+            {props.matrixNavAdm}
           </Link>
         </nav>
       </header>
@@ -44,17 +41,17 @@ export function MatrixHeader(props: Props) {
   return (
     <header className="matrix-header matrix-header-adm">
       <Link to="/adm" className="matrix-header-brand">
-        <AppLogo className="matrix-header-logo" variant="matrix" aria-label={props.logoAria} />
+        <AppLogo className="matrix-header-logo" variant="professional" aria-label={props.logoAria} />
       </Link>
       <nav className="matrix-header-nav" aria-label="Admin">
         <Link to="/adm" className="matrix-nav-link">
-          [{props.navConsole}]
+          {props.navConsole}
         </Link>
         <Link to="/adm/node" className="matrix-nav-link">
-          [{props.navNode}]
+          {props.navNode}
         </Link>
         <Link to="/adm/swaps" className="matrix-nav-link">
-          [{props.navSwaps}]
+          {props.navSwaps}
         </Link>
       </nav>
       <div className="matrix-header-actions">
