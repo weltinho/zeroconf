@@ -7,10 +7,10 @@
   color-scheme: dark;
 
   /* Core Palette — Professional Dark Fintech */
-  --background: #0a0f14;
-  --background-elevated: #0f1419;
-  --background-card: #141b22;
-  --background-hover: #1a232d;
+  --background: #0d1a1a;
+  --background-elevated: #122222;
+  --background-card: #152828;
+  --background-hover: #1a3333;
 
   /* Accent — Emerald Trust (verde sofisticado, não neon) */
   --accent: #10b981;
@@ -87,8 +87,7 @@ body {
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  opacity: 0.08;
-  filter: blur(0.5px);
+  opacity: 0.4;
 }
 
 .matrix-shell-content {
