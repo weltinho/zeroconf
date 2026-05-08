@@ -63,8 +63,8 @@ export function CryptoBackground() {
     }
 
     function draw() {
-      // Leve borrão para efeito de trail suave
-      ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
+      // Borrão bem leve - limpa mais rápido
+      ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
