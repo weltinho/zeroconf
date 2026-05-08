@@ -1,78 +1,127 @@
 import { useEffect, useRef } from "react";
 
-const CHARS = "01₿∞≡◊○●□△▼";
-const FONT_SIZE = 16;
-const DRAW_INTERVAL_MS = 80;
-
 /**
- * Efeito de fundo sutil — chuva de dados estilo fintech.
- * Muito mais discreto que o Matrix original, apenas ambiência visual.
+ * Efeito Matrix clássico com verde neon brilhante.
+ * Inclui símbolos Bitcoin e Lightning ocasionais.
  */
 export function MatrixRain() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const canvas = canvasRef.current;
-    if (!canvas) {
-      return undefined;
-    }
+    if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      return undefined;
-    }
+    if (!ctx) return;
 
-    const el = canvas;
-    const gl = ctx;
-    let intervalId = 0;
-    const dropsRef = { current: [] as number[] };
-    const charsArray = CHARS.split("");
+    // Caracteres Matrix (katakana + símbolos)
+    const matrixChars =
+      "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン" +
+      "0123456789" +
+      "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ";
 
-    function resizeCanvas() {
-      el.width = window.innerWidth;
-      el.height = window.innerHeight;
-      // Menos colunas para efeito mais esparso e elegante
-      const columns = Math.max(Math.floor(el.width / (FONT_SIZE * 3)), 8);
-      dropsRef.current = Array.from({ length: columns }, () => Math.random() * -50);
-    }
+    const cryptoChars = "₿⚡";
+    const fontSize = 16;
+    let columns: number;
+    let drops: number[];
+    let speeds: number[];
 
-    function draw() {
-      // Fade mais forte para trilhas mais curtas e sutis
-      gl.fillStyle = "rgba(10, 15, 20, 0.12)";
-      gl.fillRect(0, 0, el.width, el.height);
-      gl.font = `${FONT_SIZE}px 'Inter', sans-serif`;
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      columns = Math.floor(canvas.width / fontSize);
+      drops = [];
+      speeds = [];
 
-      for (let i = 0; i < dropsRef.current.length; i++) {
-        const ch = charsArray[Math.floor(Math.random() * charsArray.length)];
-        const x = i * FONT_SIZE * 3;
-        const y = dropsRef.current[i] * FONT_SIZE;
-
-        const brightness = Math.random();
-        // Paleta esmeralda sutil
-        if (brightness > 0.97) {
-          gl.fillStyle = "rgba(16, 185, 129, 0.6)"; // Emerald bright
-        } else if (brightness > 0.85) {
-          gl.fillStyle = "rgba(16, 185, 129, 0.25)"; // Emerald medium
-        } else {
-          gl.fillStyle = "rgba(16, 185, 129, 0.08)"; // Emerald dim
-        }
-        gl.fillText(ch, x, y);
-
-        if (y > el.height && Math.random() > 0.99) {
-          dropsRef.current[i] = 0;
-        }
-        dropsRef.current[i] += 0.5;
+      for (let i = 0; i < columns; i++) {
+        drops[i] = Math.random() * -50;
+        speeds[i] = 0.3 + Math.random() * 0.4; // Velocidade lenta e variada
       }
     }
 
-    resizeCanvas();
-    window.addEventListener("resize", resizeCanvas);
-    intervalId = window.setInterval(draw, DRAW_INTERVAL_MS);
+    function draw() {
+      // Trail effect - fundo semi-transparente
+      ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.font = `bold ${fontSize}px monospace`;
+
+      for (let i = 0; i < columns; i++) {
+        const x = i * fontSize;
+        const y = drops[i] * fontSize;
+
+        // 3% chance de símbolo crypto
+        const isCrypto = Math.random() < 0.03;
+        let char: string;
+        
+        if (isCrypto) {
+          char = cryptoChars[Math.floor(Math.random() * cryptoChars.length)];
+        } else {
+          char = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+        }
+
+        // Desenha o caractere principal (mais brilhante)
+        if (isCrypto) {
+          // Bitcoin laranja, Lightning amarelo
+          ctx.fillStyle = char === "₿" ? "#ff9500" : "#ffdd00";
+          ctx.shadowColor = char === "₿" ? "#ff9500" : "#ffdd00";
+          ctx.shadowBlur = 15;
+        } else {
+          // Verde neon brilhante com glow
+          ctx.fillStyle = "#00ff00";
+          ctx.shadowColor = "#00ff00";
+          ctx.shadowBlur = 12;
+        }
+
+        ctx.fillText(char, x, y);
+        ctx.shadowBlur = 0;
+
+        // Desenha trail de caracteres atrás
+        const trailLength = 20;
+        for (let j = 1; j <= trailLength; j++) {
+          const trailY = y - j * fontSize;
+          if (trailY < 0) continue;
+
+          // Fade gradual
+          const fade = 1 - j / trailLength;
+          const green = Math.floor(200 * fade);
+          ctx.fillStyle = `rgb(0, ${green}, 0)`;
+
+          // Caractere aleatório para o trail
+          const trailChar = matrixChars[Math.floor(Math.random() * matrixChars.length)];
+          ctx.fillText(trailChar, x, trailY);
+        }
+
+        // Move a gota para baixo
+        drops[i] += speeds[i];
+
+        // Reset quando sai da tela
+        if (drops[i] * fontSize > canvas.height + 200) {
+          if (Math.random() > 0.98) {
+            drops[i] = Math.random() * -30;
+            speeds[i] = 0.3 + Math.random() * 0.4;
+          }
+        }
+      }
+    }
+
+    resize();
+    window.addEventListener("resize", resize);
+
+    // Animação mais lenta (50ms = 20fps)
+    const intervalId = setInterval(draw, 50);
 
     return () => {
-      window.removeEventListener("resize", resizeCanvas);
-      window.clearInterval(intervalId);
+      window.removeEventListener("resize", resize);
+      clearInterval(intervalId);
     };
   }, []);
 
-  return <canvas ref={canvasRef} className="matrix-rain-canvas" aria-hidden />;
+  return (
+    <canvas
+      ref={canvasRef}
+      className="matrix-rain-canvas"
+      style={{ opacity: 1 }}
+      aria-hidden
+    />
+  );
 }
