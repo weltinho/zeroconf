@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiUrl } from "../api/url";
 import { AppLogo } from "../components/AppLogo";
 import AddressQRCode from "../components/AddressQRCode";
@@ -237,6 +237,7 @@ const SIGNET_SIM_STEP_MS = 8000;
 
 export function ClientAreaPage() {
   const params = useParams<{ orderId?: string }>();
+  const navigate = useNavigate();
   const t = useMemo(() => getUiText(), []);
 
   const [amount, setAmount] = useState("1000");
@@ -501,6 +502,21 @@ export function ClientAreaPage() {
     [stopPolling]
   );
 
+  const resetToNewOrder = useCallback(() => {
+    stopPolling();
+    setError("");
+    setCreated(null);
+    setOrder(null);
+    setDepositTxid(null);
+    setBoltzCreated(null);
+    setBoltzOrder(null);
+    setInvoice("");
+    pollCounterRef.current = {};
+    initialOrderLoadedRef.current = false;
+    setMode("onchain");
+    void navigate("/cliente", { replace: true });
+  }, [navigate, stopPolling]);
+
   async function onCreateBoltz(e: FormEvent) {
     e.preventDefault();
     stopPolling();
@@ -615,6 +631,9 @@ export function ClientAreaPage() {
 
   const orderId = created?.order_id ?? order?.order_id ?? null;
   const liveOrder = order ?? created;
+  const liveBoltz = boltzOrder ?? boltzCreated;
+  const activeOrderId = orderId ?? liveBoltz?.order_id ?? null;
+  const formLocked = activeOrderId !== null;
   const requiredBtc = liveOrder ? satsToBtc(liveOrder.required_deposit_sats) : null;
   const outputBtc = liveOrder ? satsToBtc(liveOrder.output_sats) : null;
   const destinationDisplay =
@@ -635,7 +654,6 @@ export function ClientAreaPage() {
     !orderAwaitingUserDeposit &&
     liveOrder.status !== "error";
 
-  const liveBoltz = boltzOrder ?? boltzCreated;
   const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
   const clientDepositAddress =
@@ -698,6 +716,41 @@ export function ClientAreaPage() {
   const mempoolBase = chain === "main" ? "https://mempool.space" : `https://mempool.space/${chain}`;
   const mempoolTx = (txid: string) => `${mempoolBase}/tx/${txid}`;
   const mempoolAddress = (address: string) => `${mempoolBase}/address/${address}`;
+
+  useEffect(() => {
+    const provider = String(order?.provider ?? "").trim().toLowerCase();
+    if (!provider) return;
+    if (provider === "boltz") {
+      setMode("lightning");
+      return;
+    }
+    if (provider === "bitrefill") {
+      setMode("compras");
+      return;
+    }
+    setMode("onchain");
+  }, [order?.provider]);
+
+  useEffect(() => {
+    if (!order) return;
+    const provider = String(order.provider || "").trim().toLowerCase();
+    if (!provider || provider === "internal") {
+      setUnit("sats");
+      setAmount(String(order.output_sats || ""));
+      setDestination(String(order.destination_btc_address || ""));
+      return;
+    }
+    if (provider === "bitrefill") {
+      setComprasEmail("");
+    }
+  }, [order]);
+
+  useEffect(() => {
+    if (!order?.order_id) return;
+    if (String(order.provider || "").trim().toLowerCase() !== "boltz") return;
+    if (boltzOrder?.order_id === order.order_id) return;
+    void pollBoltzOrder(order.order_id);
+  }, [order?.order_id, order?.provider, boltzOrder?.order_id, pollBoltzOrder]);
 
   function onToggleUnit(next: "btc" | "sats") {
     if (next === unit) {
@@ -779,6 +832,7 @@ export function ClientAreaPage() {
                 role="tab"
                 aria-selected={mode === "onchain"}
                 className={mode === "onchain" ? "is-active" : ""}
+                disabled={formLocked}
                 onClick={() => {
                   setMode("onchain");
                   setError("");
@@ -791,6 +845,7 @@ export function ClientAreaPage() {
                 role="tab"
                 aria-selected={mode === "lightning"}
                 className={mode === "lightning" ? "is-active" : ""}
+                disabled={formLocked}
                 onClick={() => {
                   setMode("lightning");
                   setError("");
@@ -803,6 +858,7 @@ export function ClientAreaPage() {
                 role="tab"
                 aria-selected={mode === "compras"}
                 className={mode === "compras" ? "is-active" : ""}
+                disabled={formLocked}
                 onClick={() => {
                   setMode("compras");
                   setError("");
@@ -833,12 +889,22 @@ export function ClientAreaPage() {
             ) : null}
 
             {error ? <p className="error">{error}</p> : null}
+            {formLocked ? (
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+                <p className="panel-hint" style={{ margin: "0 0 0.25rem" }}>
+                  Ordem ativa #{activeOrderId}. Campos bloqueados para evitar criação de ordem paralela.
+                </p>
+                <button type="button" onClick={resetToNewOrder}>
+                  Nova troca
+                </button>
+              </div>
+            ) : null}
 
             {mode === "onchain" ? (
               <form onSubmit={onCreate} className="row client-order-form">
                 <label className="client-order-field">
                   <span>Valor</span>
-                  <input value={amount} onChange={(e) => setAmount(e.target.value)} />
+                  <input value={amount} onChange={(e) => setAmount(e.target.value)} disabled={formLocked} />
                 </label>
 
                 <label className="client-order-field client-order-field-unit">
@@ -849,6 +915,7 @@ export function ClientAreaPage() {
                       role="tab"
                       aria-selected={unit === "btc"}
                       className={unit === "btc" ? "is-active" : ""}
+                      disabled={formLocked}
                       onClick={() => onToggleUnit("btc")}
                     >
                       BTC
@@ -858,6 +925,7 @@ export function ClientAreaPage() {
                       role="tab"
                       aria-selected={unit === "sats"}
                       className={unit === "sats" ? "is-active" : ""}
+                      disabled={formLocked}
                       onClick={() => onToggleUnit("sats")}
                     >
                       sats
@@ -871,6 +939,7 @@ export function ClientAreaPage() {
                     value={destination}
                     onChange={(e) => setDestination(e.target.value)}
                     placeholder="bc1... / tb1..."
+                    disabled={formLocked}
                   />
                 </label>
                 {chain === "signet" ? (
@@ -889,7 +958,7 @@ export function ClientAreaPage() {
                 ) : null}
 
                 <div className="client-order-submit">
-                  <button type="submit" disabled={creating}>
+                  <button type="submit" disabled={creating || formLocked}>
                     {creating ? "Criando…" : "Criar ordem"}
                   </button>
                 </div>
@@ -903,6 +972,7 @@ export function ClientAreaPage() {
                     onChange={(e) => { setInvoice(e.target.value); setError(""); }}
                     placeholder="lnbc..."
                     style={{ fontFamily: "monospace", fontSize: "0.75rem" }}
+                    disabled={formLocked}
                   />
                 </label>
 
@@ -962,6 +1032,7 @@ export function ClientAreaPage() {
                     type="submit"
                     disabled={
                       creating ||
+                      formLocked ||
                       !invoice.trim() ||
                       (chain !== "signet" &&
                         invoicePreview != null &&
@@ -992,7 +1063,7 @@ export function ClientAreaPage() {
                   <select
                     value={comprasCountryCode}
                     onChange={(e) => setComprasCountryCode(e.target.value)}
-                    disabled={bitrefillLoading}
+                    disabled={bitrefillLoading || formLocked}
                   >
                     {comprasCountries.map((c) => (
                       <option key={c.code} value={c.code}>
@@ -1007,7 +1078,7 @@ export function ClientAreaPage() {
                   <select
                     value={comprasCategorySlug}
                     onChange={(e) => setComprasCategorySlug(e.target.value)}
-                    disabled={bitrefillLoading}
+                    disabled={bitrefillLoading || formLocked}
                   >
                     {comprasCategories.length === 0 ? (
                       <option value="">{(bitrefillLoading && !bitrefillError) ? "Carregando…" : "—"}</option>
@@ -1026,7 +1097,7 @@ export function ClientAreaPage() {
                   <select
                     value={comprasProductId}
                     onChange={(e) => setComprasProductId(e.target.value)}
-                    disabled={bitrefillLoading}
+                    disabled={bitrefillLoading || formLocked}
                   >
                     <option value="">Selecione…</option>
                     {comprasProducts.map((p) => (
@@ -1044,7 +1115,7 @@ export function ClientAreaPage() {
                     <select
                       value={comprasPackageId}
                       onChange={(e) => setComprasPackageId(e.target.value)}
-                      disabled={!comprasProductId}
+                      disabled={!comprasProductId || formLocked}
                     >
                       <option value="">Selecione…</option>
                       {comprasSelectedProduct.packages.map((pk) => (
@@ -1072,6 +1143,7 @@ export function ClientAreaPage() {
                       onChange={(e) => setComprasPhone(e.target.value)}
                       placeholder="+55…"
                       autoComplete="tel"
+                      disabled={formLocked}
                     />
                   </label>
                 ) : null}
@@ -1086,6 +1158,7 @@ export function ClientAreaPage() {
                     onChange={(e) => setComprasEmail(e.target.value)}
                     placeholder="voce@exemplo.com"
                     autoComplete="email"
+                    disabled={formLocked}
                   />
                 </label>
 
@@ -1095,6 +1168,7 @@ export function ClientAreaPage() {
                     disabled={
                       comprasSubmitting ||
                       creating ||
+                      formLocked ||
                       bitrefillLoading ||
                       !comprasProductId ||
                       !comprasEmail.trim() ||

@@ -47,7 +47,7 @@ _CATALOG_FILTERS_ROWS: tuple[tuple[str, str, Optional[str], Optional[str]], ...]
     ("streaming_ent", "Streaming / entretenimento", None, "streaming,entertainment"),
     ("games", "Jogos", None, "games"),
     ("gift_card", "Gift cards / varejo", "gift_card", None),
-    ("esim", "Dados / eSIM", "esim", None),
+    ("esim", "Dados / eSIM", None, "esim"),
 )
 
 # Slugs antigos enviados pelo frontend antes do mapeamento type vs category.
@@ -79,6 +79,46 @@ def _resolve_catalog_filter(category_slug: str) -> tuple[Optional[str], Optional
             detail=f"filtro de catálogo desconhecido: {category_slug!r}",
         )
     return _FILTER_BY_SLUG[canon]
+
+
+def _canonical_catalog_slug(category_slug: str) -> str:
+    slug = category_slug.strip()
+    if not slug:
+        return ""
+    return _LEGACY_SLUG_CANONICAL.get(slug, slug)
+
+
+def _post_filter_catalog_products(products: list[dict[str, Any]], category_slug: str) -> list[dict[str, Any]]:
+    """Aplica filtros defensivos no catálogo quando a API upstream vem inconsistente.
+
+    Observação: a Bitrefill pode retornar gift cards em consultas `type=phone_refill`.
+    """
+    canon = _canonical_catalog_slug(category_slug)
+    if canon == "phone_refill":
+        return [
+            p
+            for p in products
+            if str(p.get("recipient_type") or "").strip().lower() == "phone_number"
+        ]
+    if canon == "gift_card":
+        return [
+            p
+            for p in products
+            if str(p.get("recipient_type") or "").strip().lower() != "phone_number"
+        ]
+    if canon == "esim":
+        def _is_esim_product(p: dict[str, Any]) -> bool:
+            pid = str(p.get("id") or "").strip().lower()
+            name = str(p.get("name") or "").strip().lower()
+            cats = [str(c).strip().lower() for c in (p.get("categories") or [])]
+            if "esim" in pid or "e-sim" in pid:
+                return True
+            if "esim" in name or "e-sim" in name:
+                return True
+            return any(("esim" in c or "e-sim" in c) for c in cats)
+
+        return [p for p in products if _is_esim_product(p)]
+    return products
 
 
 def _require_bitrefill() -> None:
@@ -203,6 +243,7 @@ async def catalog_products(
     meta_in = raw.get("meta") if isinstance(raw.get("meta"), dict) else {}
     rows = raw.get("data") if isinstance(raw.get("data"), list) else []
     normalized = [_normalize_product(p) for p in rows if isinstance(p, dict)]
+    normalized = _post_filter_catalog_products(normalized, cat_trim)
 
     next_start = _next_start_from_meta(meta_in)
     meta_out = {
