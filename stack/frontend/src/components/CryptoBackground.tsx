@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 
 /**
- * Efeito Matrix discreto com símbolos Bitcoin/Lightning frequentes.
+ * Efeito Matrix com símbolos Bitcoin/Lightning persistentes.
+ * Caracteres ficam na tela por mais tempo antes de trocar.
  */
 export function CryptoBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -12,98 +13,123 @@ export function CryptoBackground() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Menos caracteres matrix, mais foco em crypto
-    const matrixChars = "01アウカキセソタチツ";
+    const matrixChars = "01";
     const cryptoChars = "₿⚡";
-    const fontSize = 18;
-    const columnSpacing = 50; // Espaçamento maior = menos colunas
-    let columns: number;
-    let drops: number[];
-    let speeds: number[];
-    let activeColumns: boolean[];
+    const fontSize = 20;
+    const columnSpacing = 60;
+    
+    interface Column {
+      x: number;
+      y: number;
+      speed: number;
+      chars: { char: string; isCrypto: boolean }[];
+      active: boolean;
+    }
+    
+    let columns: Column[] = [];
+
+    function createColumn(x: number): Column {
+      const trailLength = 8 + Math.floor(Math.random() * 6);
+      const chars: { char: string; isCrypto: boolean }[] = [];
+      
+      for (let i = 0; i < trailLength; i++) {
+        const isCrypto = Math.random() < 0.30;
+        const char = isCrypto
+          ? cryptoChars[Math.floor(Math.random() * cryptoChars.length)]
+          : matrixChars[Math.floor(Math.random() * matrixChars.length)];
+        chars.push({ char, isCrypto });
+      }
+      
+      return {
+        x,
+        y: Math.random() * -300,
+        speed: 0.8 + Math.random() * 0.6,
+        chars,
+        active: Math.random() > 0.5,
+      };
+    }
 
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      columns = Math.floor(canvas.width / columnSpacing);
-      drops = [];
-      speeds = [];
-      activeColumns = [];
-
-      for (let i = 0; i < columns; i++) {
-        drops[i] = Math.random() * -50;
-        speeds[i] = 0.2 + Math.random() * 0.3; // Mais lento
-        activeColumns[i] = Math.random() > 0.4; // Apenas 60% ativas
+      
+      const numColumns = Math.floor(canvas.width / columnSpacing);
+      columns = [];
+      
+      for (let i = 0; i < numColumns; i++) {
+        columns.push(createColumn(i * columnSpacing + columnSpacing / 2));
       }
     }
 
     function draw() {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.08)";
+      ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
+      ctx.textAlign = "center";
 
-      for (let i = 0; i < columns; i++) {
-        if (!activeColumns[i]) continue;
+      for (const col of columns) {
+        if (!col.active) continue;
 
-        const x = i * columnSpacing;
-        const y = drops[i] * fontSize;
+        for (let i = 0; i < col.chars.length; i++) {
+          const { char, isCrypto } = col.chars[i];
+          const charY = col.y - i * fontSize;
+          
+          if (charY < -fontSize || charY > canvas.height + fontSize) continue;
 
-        // 25% chance de crypto - bem mais frequente
-        const isCrypto = Math.random() < 0.25;
-        let char: string;
-
-        if (isCrypto) {
-          char = cryptoChars[Math.floor(Math.random() * cryptoChars.length)];
-        } else {
-          char = matrixChars[Math.floor(Math.random() * matrixChars.length)];
-        }
-
-        if (isCrypto) {
-          ctx.fillStyle = char === "₿" ? "#ff9500" : "#ffdd00";
-          ctx.shadowColor = char === "₿" ? "#ff9500" : "#ffdd00";
-          ctx.shadowBlur = 15;
-        } else {
-          ctx.fillStyle = "#00ff00";
-          ctx.shadowColor = "#00ff00";
-          ctx.shadowBlur = 12;
-        }
-
-        ctx.fillText(char, x, y);
-        ctx.shadowBlur = 0;
-
-        // Trail mais curto
-        const trailLength = 12;
-        for (let j = 1; j <= trailLength; j++) {
-          const trailY = y - j * fontSize;
-          if (trailY < 0) continue;
-
-          const fade = 1 - j / trailLength;
-          const green = Math.floor(180 * fade);
-          ctx.fillStyle = `rgb(0, ${green}, 0)`;
-
-          // 15% crypto no trail
-          const trailIsCrypto = Math.random() < 0.15;
-          const trailChar = trailIsCrypto
-            ? cryptoChars[Math.floor(Math.random() * cryptoChars.length)]
-            : matrixChars[Math.floor(Math.random() * matrixChars.length)];
-          ctx.fillText(trailChar, x, trailY);
-        }
-
-        drops[i] += speeds[i];
-
-        if (drops[i] * fontSize > canvas.height + 200) {
-          if (Math.random() > 0.98) {
-            drops[i] = Math.random() * -30;
-            speeds[i] = 0.2 + Math.random() * 0.3;
+          const fade = 1 - i / col.chars.length;
+          
+          if (i === 0) {
+            if (isCrypto) {
+              ctx.fillStyle = char === "₿" ? "#ff9500" : "#ffdd00";
+              ctx.shadowColor = char === "₿" ? "#ff9500" : "#ffdd00";
+              ctx.shadowBlur = 20;
+            } else {
+              ctx.fillStyle = "#00ff00";
+              ctx.shadowColor = "#00ff00";
+              ctx.shadowBlur = 15;
+            }
+          } else {
+            if (isCrypto) {
+              const alpha = fade * 0.8;
+              ctx.fillStyle = char === "₿" 
+                ? `rgba(255, 149, 0, ${alpha})` 
+                : `rgba(255, 221, 0, ${alpha})`;
+            } else {
+              const green = Math.floor(200 * fade);
+              ctx.fillStyle = `rgb(0, ${green}, 0)`;
+            }
+            ctx.shadowBlur = 0;
           }
+
+          ctx.fillText(char, col.x, charY);
+        }
+        
+        ctx.shadowBlur = 0;
+        col.y += col.speed;
+
+        // Troca caracteres raramente (2% chance por frame)
+        if (Math.random() < 0.02) {
+          const idx = Math.floor(Math.random() * col.chars.length);
+          const isCrypto = Math.random() < 0.30;
+          col.chars[idx] = {
+            char: isCrypto
+              ? cryptoChars[Math.floor(Math.random() * cryptoChars.length)]
+              : matrixChars[Math.floor(Math.random() * matrixChars.length)],
+            isCrypto,
+          };
+        }
+
+        if (col.y - col.chars.length * fontSize > canvas.height) {
+          Object.assign(col, createColumn(col.x));
+          col.active = true;
         }
       }
     }
 
     resize();
     window.addEventListener("resize", resize);
-    const intervalId = setInterval(draw, 50);
+    const intervalId = setInterval(draw, 33);
 
     return () => {
       window.removeEventListener("resize", resize);
