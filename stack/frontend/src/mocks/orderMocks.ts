@@ -13,7 +13,7 @@
 // =============================================
 // CONFIGURAÇÃO - MUDE PARA false ANTES DE PRODUÇÃO
 // =============================================
-export const USE_ORDER_MOCKS = true;
+export const USE_ORDER_MOCKS = false;
 
 // Tempo em ms entre cada mudança de estado (para simular progressão)
 const STATE_TRANSITION_DELAY = 4000;

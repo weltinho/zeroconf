@@ -1,0 +1,174 @@
+================================================================================
+ZEROCONF - MELHORIAS DE UX NA TELA DE CLIENTE
+Data: 2026-05-08
+================================================================================
+
+RESUMO
+------
+Refatoracao completa da experiencia do usuario na pagina de cliente (/cliente),
+focando em clareza, feedback visual e facilidade de uso para usuarios leigos
+em Bitcoin.
+
+
+================================================================================
+MUDANCAS REALIZADAS
+================================================================================
+
+1. SLOGAN ATUALIZADO
+--------------------
+- De: "Infraestrutura Bitcoin"  
+- Para: "Roteamento seguro de liquidez 1:1"
+- Local: Componente AppLogo (stack/frontend/src/components/AppLogo.tsx)
+- O slogan agora aparece abaixo do nome da marca no logo SVG
+
+
+2. HEADER SIMPLIFICADO
+----------------------
+- Removido logo duplicado na area de conteudo
+- Header agora mostra apenas: badges de rede + botao de acao
+- Status bar mais limpa sem elementos redundantes
+- Arquivos afetados:
+  - stack/frontend/src/pages/ClientAreaPage.tsx
+  - stack/frontend/src/styles.css (novo: .client-status-bar)
+
+
+3. SELECTS SUBSTITUIDOS POR COMBOBOX COM BUSCA
+----------------------------------------------
+- Novo componente: Combobox (stack/frontend/src/components/Combobox.tsx)
+- Features:
+  - Campo de busca integrado para filtrar opcoes
+  - Bandeiras de paises (usando unicode flags)
+  - Icones para categorias de produtos
+  - Estados de loading e disabled
+  - Animacoes suaves de abertura/fechamento
+- Aplicado em: Pais, Categoria, Produto, Valor/Pacote
+
+
+4. PROGRESS STEPS HORIZONTAL
+----------------------------
+- Novo componente: ProgressSteps (stack/frontend/src/components/ProgressSteps.tsx)
+- Layout horizontal em vez de vertical
+- Mostra apenas 3 steps: anterior, atual, proximo
+- Indicadores de steps ocultos (ex: "2" para mostrar que ha 2 antes)
+- Estado final com icone de sucesso (checkmark) em vez de loader
+- Estados visuais claros: completed (verde), current (loading), pending (cinza)
+
+
+5. BOTAO "NOVA TROCA" MOVIDO
+----------------------------
+- Novo componente: DropdownMenu (stack/frontend/src/components/DropdownMenu.tsx)
+- Icone de reload no lugar de tres pontinhos
+- Requer 2 cliques para evitar acionamento acidental
+- Posicionado no canto superior direito
+
+
+6. QR CODE COM PULSO
+--------------------
+- Novo componente: PulsingQRCode (stack/frontend/src/components/PulsingQRCode.tsx)
+- Aneis de luz pulsando enquanto aguarda deposito
+- Animacao de "capturado" quando pagamento e detectado
+- Feedback visual imediato de que algo aconteceu
+
+
+7. CONTADOR ANIMADO BTC
+-----------------------
+- Novo componente: AnimatedNumber (stack/frontend/src/components/AnimatedNumber.tsx)
+- Valor em BTC anima de 0 ate o valor final
+- Efeito de "counting up" com curva de easing suave
+- Aplicado no valor a depositar
+
+
+8. TOAST DE COPIA ELEGANTE
+--------------------------
+- Novo componente: CopyToast (stack/frontend/src/components/CopyToast.tsx)
+- Toast animado verde confirmando copia
+- Aparece ao copiar: endereco, valor BTC, preimage, codigo gift card
+- Auto-dismiss apos 2 segundos
+
+
+9. INFORMACOES DE DEPOSITO SEMPRE VISIVEIS
+------------------------------------------
+- QR code, valor e endereco permanecem visiveis durante todo o fluxo
+- Secao de transacoes com links para mempool
+- Permite usuario validar que depositou corretamente
+
+
+================================================================================
+ARQUIVOS NOVOS CRIADOS
+================================================================================
+
+Componentes:
+- stack/frontend/src/components/Combobox.tsx
+- stack/frontend/src/components/ProgressSteps.tsx
+- stack/frontend/src/components/DropdownMenu.tsx
+- stack/frontend/src/components/CopyToast.tsx
+- stack/frontend/src/components/AnimatedNumber.tsx
+- stack/frontend/src/components/PulsingQRCode.tsx
+
+Mocks (para desenvolvimento):
+- stack/frontend/src/mocks/catalogMocks.ts
+- stack/frontend/src/mocks/orderMocks.ts
+
+NOTA: Os mocks estao DESATIVADOS (USE_MOCKS = false, USE_ORDER_MOCKS = false).
+Para testar sem backend, mude para true.
+
+
+================================================================================
+POSSIVEIS CONFLITOS COM API
+================================================================================
+
+NAO ha mudancas na comunicacao com a API. Todas as alteracoes sao puramente
+de frontend/UI. Os seguintes pontos permanecem inalterados:
+
+1. Endpoints utilizados:
+   - GET /client/bitrefill/catalog/countries
+   - GET /client/bitrefill/catalog/categories  
+   - GET /client/bitrefill/catalog/products
+   - POST /client/bitrefill/orders
+   - POST /client/boltz/orders
+   - GET /client/orders/{orderId}
+   - GET /client/boltz/orders/{orderId}
+
+2. Estrutura de dados esperada:
+   - Paises: { data: [{ code, name }] }
+   - Categorias: { data: [{ slug, label }] }
+   - Produtos: { products: [{ id, name, currency, in_stock, packages, ... }] }
+   - Ordens: mantém estrutura original (order_id, status, deposit_btc_address, etc.)
+
+3. Polling de status: continua funcionando normalmente
+
+4. Estados de ordem: mapeamento permanece o mesmo
+   - Boltz: awaiting_deposit -> deposit_detected -> lockup_pending -> 
+            provider_claim_pending -> paid_out
+   - Bitrefill: awaiting_deposit -> deposit_detected -> confirming -> 
+                provider_claim_pending -> paid_out
+
+
+================================================================================
+COMO REATIVAR MOCKS (para desenvolvimento)
+================================================================================
+
+1. Abrir: stack/frontend/src/mocks/catalogMocks.ts
+   Mudar: export const USE_MOCKS = false;
+   Para:  export const USE_MOCKS = true;
+
+2. Abrir: stack/frontend/src/mocks/orderMocks.ts
+   Mudar: export const USE_ORDER_MOCKS = false;
+   Para:  export const USE_ORDER_MOCKS = true;
+
+
+================================================================================
+CSS ADICIONADO
+================================================================================
+
+Novas classes em styles.css:
+- .combobox-* (componente de select com busca)
+- .progress-steps-horizontal, .progress-step-h-* (stepper horizontal)
+- .dropdown-menu-* (menu dropdown)
+- .copy-toast-* (toast de feedback)
+- .pulsing-qr-*, .qr-pulse-ring-* (QR com pulso)
+- .btc-value-highlight (destaque do valor BTC)
+- .client-status-bar (barra de status simplificada)
+
+
+================================================================================

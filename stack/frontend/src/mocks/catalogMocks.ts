@@ -458,7 +458,7 @@ export const MOCK_PRODUCTS: MockProduct[] = [
 ];
 
 // Flag to enable/disable mocks (set to false for production)
-export const USE_MOCKS = true;
+export const USE_MOCKS = false;
 
 // Helper to filter products by category and country
 export function getMockProducts(categorySlug: string, countryCode: string): MockProduct[] {
