@@ -889,7 +889,7 @@ export function ClientAreaPage() {
                   </div>
                 )}
 
-                <div className="client-order-submit" style={{ display: "flex", justifyContent: "flex-end" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end" }}>
                   <button
                     type="submit"
                     disabled={
@@ -905,7 +905,7 @@ export function ClientAreaPage() {
                 </div>
               </form>
             ) : (
-              <div className="client-order-form" style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: "0.85rem" }}>
                 <p className="panel-hint" style={{ margin: 0 }}>
                   Escolha produto e valor ou pacote, confirme o e-mail e use <strong>Comprar</strong> para obter aqui um
                   endereço de depósito na nossa rede. O montante pode incluir colchão para taxas da rede e oscilações

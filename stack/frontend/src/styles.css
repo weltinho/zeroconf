@@ -671,12 +671,12 @@ body {
   gap: 1rem;
   flex: 1;
   min-height: 0;
-  align-items: start;
+  align-items: stretch;
 }
 
 @media (min-width: 900px) {
   .workspace {
-    grid-template-columns: minmax(420px, 1fr) minmax(320px, 1fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   }
 }
 
@@ -765,19 +765,9 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  min-width: 0;
   max-height: calc(100dvh - 9rem);
   max-height: calc(100vh - 9rem);
   overflow: hidden;
-}
-
-@media (min-width: 900px) {
-  .panel:first-child {
-    min-width: 420px;
-  }
-  .panel:last-child {
-    min-width: 320px;
-  }
 }
 
 .panel h2 {
@@ -786,20 +776,6 @@ body {
   color: var(--text-primary);
   font-size: 1.0625rem;
   font-weight: 600;
-}
-
-.panel-rpc {
-  height: 380px;
-  overflow-y: auto;
-}
-
-.panel-rpc > h2 {
-  margin-bottom: 0.75rem;
-}
-
-.client-order-card {
-  height: 380px;
-  overflow-y: auto;
 }
 
 .panel-hint {
