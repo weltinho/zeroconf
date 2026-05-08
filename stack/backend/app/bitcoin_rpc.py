@@ -1,3 +1,12 @@
+"""Cliente JSON-RPC para Bitcoin Core.
+
+Pontos importantes para operação:
+- Usa HTTP Basic Auth com credenciais do bitcoind.
+- Suporta escopo por wallet (`/wallet/<nome>`) quando necessário.
+- Normaliza erros de transporte/HTTP/JSON-RPC em `BitcoinRpcError`, para os routers
+  conseguirem devolver mensagens úteis sem cair em "Internal Server Error" genérico.
+"""
+
 from typing import Any
 from urllib.parse import quote
 
@@ -34,7 +43,9 @@ class BitcoinRpcClient:
             "method": method,
             "params": params or [],
         }
-        # Chamada HTTP POST para endpoint RPC.
+        # Chamada HTTP POST para endpoint RPC do Core.
+        # Quando `wallet` é informado, a URL vira `/wallet/<nome>` e o Core executa
+        # o método no contexto dessa carteira específica.
         try:
             response = await self._client.post(self._rpc_url(wallet), json=payload)
         except httpx.HTTPError as exc:
@@ -51,6 +62,7 @@ class BitcoinRpcClient:
             raise BitcoinRpcError(self._format_jsonrpc_error(body["error"]))
 
         # Sem erro JSON-RPC explícito, mantém semântica de erro HTTP com contexto.
+        # Ex.: proxy/caddy/balanceador devolvendo 5xx antes de chegar no bitcoind.
         try:
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
@@ -77,6 +89,8 @@ class BitcoinRpcClient:
 
     @staticmethod
     def _rpc_url(wallet: str | None) -> str:
+        # Endpoint padrão do Core: http://host:port
+        # Endpoint por wallet: http://host:port/wallet/<nome-escapado>
         if wallet is None:
             return settings.rpc_url
         wallet_name = wallet.strip()

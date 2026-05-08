@@ -176,9 +176,12 @@ async def _ensure_bitrefill_invoice(
 
 class SwapOrderProcessor:
     def __init__(self, rpc: BitcoinRpcClient) -> None:
+        # Cliente RPC do Bitcoin Core injetado (facilita teste e observabilidade).
         self._rpc = rpc
 
     async def _decode_wallet_tx(self, wallet: str, txid: str) -> dict[str, Any] | None:
+        # Pipeline de inspeção de tx no Core:
+        # gettransaction(wallet-aware) -> getrawtransaction(hex) fallback -> decoderawtransaction.
         try:
             tx = await self._rpc.call("gettransaction", [txid], wallet=wallet)
         except BitcoinRpcError:
@@ -372,6 +375,8 @@ class SwapOrderProcessor:
         return True
 
     async def handle_hashtx(self, txid: str) -> None:
+        # Callback ligado ao tópico ZMQ `hashtx`.
+        # Só continua quando a tx é da wallet do operador (gettransaction wallet-aware).
         wallet = settings.bitcoin_operator_wallet.strip()
         if not wallet:
             return
@@ -382,6 +387,7 @@ class SwapOrderProcessor:
             return
 
         # Usa gettransaction (wallet-aware) para descobrir endereços recebidos.
+        # Isso evita consultar tx irrelevantes para a operação.
         try:
             tx = await self._rpc.call("gettransaction", [txid], wallet=wallet)
         except BitcoinRpcError:
@@ -437,11 +443,20 @@ class SwapOrderProcessor:
                         "order matched from incoming wallet tx",
                         {"event_txid": txid, "deposit_btc_address": addr},
                     )
+                    # Tenta pagar imediatamente (estratégia ZeroConf-first).
                     await self._try_payout_order(session, wallet, order, event_txid=txid)
 
             await session.commit()
 
     async def _try_payout_order(self, session: AsyncSession, wallet: str, order: SwapOrder, event_txid: str | None = None) -> None:
+        """Executa tentativa de payout on-chain usando Bitcoin Core.
+
+        Sequência principal:
+        1) listunspent no endereço de depósito da ordem
+        2) walletcreatefundedpsbt com inputs selecionados
+        3) walletprocesspsbt / finalizepsbt
+        4) sendrawtransaction
+        """
         if await self._maybe_handle_signet_demo(session, wallet, order, event_txid):
             return
 

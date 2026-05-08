@@ -128,6 +128,7 @@ class ZmqEventRelay:
             await self._broadcast(event)
 
     def status_snapshot(self) -> dict[str, Any]:
+        # Consumido por /adm/node/health-summary para observabilidade do canal ZMQ.
         return {
             "running": self._running,
             "connected_subscriber": self._socket is not None and self._running,
@@ -144,6 +145,7 @@ class ZmqEventRelay:
         if not is_relevant:
             return
         # Notifica listeners internos (best effort; não deve derrubar relay).
+        # Ex.: SwapOrderProcessor, que reage a depósitos antes da confirmação.
         if self._hashtx_listeners:
             for listener in list(self._hashtx_listeners):
                 try:
@@ -268,6 +270,7 @@ class ZmqEventRelay:
                 "Transação relevante para a carteira do operador (txid de 32 B; sem raw completo)."
             )
             base["txid"] = ph[:64] if len(ph) >= 64 else ph
+            # Quando chega aqui, passou pelo filtro wallet-aware (se habilitado).
             base["wallet_relevante"] = True
             return base
 

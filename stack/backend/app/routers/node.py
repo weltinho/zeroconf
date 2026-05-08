@@ -225,6 +225,16 @@ async def node_health_summary(
     request: Request,
     _user: dict = Depends(get_adm_user),
 ) -> dict[str, Any]:
+    """Resumo operacional do Bitcoin Core para o painel admin.
+
+    Objetivo: fornecer sinais de saúde acionáveis sem expor RPC cru:
+    - RPC up/down + latência
+    - ZMQ conectado + último evento recebido
+    - estado de sync da chain (lag headers-blocks)
+    - mempool básico (size + mempoolminfee)
+    - wallet operador (configurada/carregada)
+    - workers internos que dependem do Core
+    """
     out: dict[str, Any] = {
         "rpc": {"ok": False, "latency_ms": None, "error": None},
         "zmq": {"connected": False, "last_event_at_epoch": None, "last_event_topic": None},
@@ -236,6 +246,7 @@ async def node_health_summary(
 
     t0 = time.perf_counter()
     try:
+        # Chamada-chave para validar disponibilidade real do bitcoind.
         chain = await rpc.call("getblockchaininfo")
         out["rpc"]["ok"] = True
         out["rpc"]["latency_ms"] = int((time.perf_counter() - t0) * 1000)
@@ -245,6 +256,7 @@ async def node_health_summary(
         out["rpc"]["error"] = str(exc)[:512]
         chain = None
 
+    # Snapshot do relay que assina eventos ZMQ do Core.
     zmq = zmq_relay.status_snapshot()
     out["zmq"]["connected"] = bool(zmq.get("connected_subscriber"))
     out["zmq"]["last_event_at_epoch"] = zmq.get("last_event_at_epoch")
@@ -260,6 +272,7 @@ async def node_health_summary(
             "lag": max(headers - blocks, 0),
         }
     try:
+        # Métrica de mempool útil para entender pressão de fee mínima exigida.
         mp = await rpc.call("getmempoolinfo")
         if isinstance(mp, Mapping):
             out["mempool"]["size"] = mp.get("size")
@@ -272,6 +285,7 @@ async def node_health_summary(
     out["wallet"]["configured"] = wallet_name is not None
     if wallet_name:
         try:
+            # Confirma que a wallet operacional do Core está pronta para gastar/receber.
             await _ensure_wallet_loaded(wallet_name)
             await rpc.call("getwalletinfo", wallet=wallet_name)
             out["wallet"]["loaded"] = True
@@ -287,6 +301,11 @@ async def node_diagnostic(
     request: Request,
     _user: dict = Depends(get_adm_user),
 ) -> dict[str, Any]:
+    """Diagnóstico 1-clique sobre integração com Bitcoin Core.
+
+    Retorna checks binários (ok/erro), detalhe técnico e sugestão de ação.
+    É pensado para suporte operacional rápido sem abrir shell no servidor.
+    """
     summary = await node_health_summary(request, _user)
     checks: list[dict[str, Any]] = []
 

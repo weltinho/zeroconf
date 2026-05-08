@@ -1,90 +1,214 @@
-# zeroconf — ZeroConf Prop
+# ZeroConf Prop
 
-Produto do hackathon **CoreCraft** (Bitcoin Coders): usar **Bitcoin Core** como backend real — **JSON-RPC**, **ZMQ** e (na próxima fase) persistência **MariaDB** para um fluxo de **prop liquidity** em que importa ver e mover fundos **antes da confirmação**.
+Aplicação do hackathon **CoreCraft (Bitcoin Coders)** que usa **Bitcoin Core como backend real** para operações de troca/pagamento com UX de cliente e operação administrativa.
 
-Esta fase do repositório foca stack estável (**mainnet** prune, FastAPI, React, Caddy, MariaDB no compose) e UI/backend orientados a esse propósito — já não é um “lab” genérico só para espetar eventos ZMQ na consola.
+O objetivo é simples: provar um fluxo utilizável, auditável e rápido, com:
 
-## O que há aqui
+- **Bitcoin Core** (JSON-RPC + ZMQ)
+- **FastAPI** (orquestração de negócio)
+- **React** (cliente e admin)
+- **MariaDB** (persistência operacional)
+- **Caddy** (HTTPS/proxy)
 
-- **`bitcoind`** em **mainnet** com **prune** (~15 GiB de blocos no `bitcoin.conf`), imagem [`bitcoin/bitcoin:31.0`](https://hub.docker.com/r/bitcoin/bitcoin).
-- **Backend** FastAPI (**ZeroConf API**): passthrough RPC para o nó e relay WebSocket dos eventos ZMQ.
-- **Frontend** React + Vite (**ZeroConf Prop**): entrada principal + ferramentas de operador (RPC curado e stream ZMQ).
-- **Caddy**: HTTPS e proxy reverso.
-- **MariaDB**: serviço no `stack/docker-compose.yml`; integração da API com schema de fluxos virá na fase seguinte.
+---
 
-## Layout
+## Visão geral da aplicação
 
-- **`docker-compose.yml` (raiz):** só **bitcoind** — rede Docker nomeada `bitcoin-coder-net` e volume `bitcoin-data`.
-- **`stack/docker-compose.yml`:** MariaDB, backend, frontend e Caddy — iterar aqui sem recriar o nó.
-- `infra/bitcoin/bitcoin.conf`: mainnet prune, RPC, ZMQ (rede Docker)
-- `stack/infra/caddy/Caddyfile`: proxy HTTPS da stack da app
-- `stack/backend/`: API
-- `stack/frontend/`: UI
+### Área Cliente (`/cliente`)
 
-## Bitcoind (mainnet leve)
+- Criar ordem de envio on-chain
+- Criar swap Lightning via Boltz
+- Criar compra via Bitrefill
+- Ver progresso da ordem, status externo, timeline BRT e dados técnicos (em signet)
 
-### Objetivo
+### Área Administrativa (`/adm`)
 
-- Setup de Bitcoin Core adequado a VPS pequena (ex.: free tier).
-- Nó real para blocos recentes, mempool e eventos em tempo real para o produto ZeroConf.
-- Disco contido com prune (não arquivo completo).
+- Node tools: chain/wallet/ZMQ + painel de saúde + diagnóstico 1-clique
+- Histórico de trocas + logs
+- Resgate de fundos travados por UTXO
+- Realização de lucro (saque administrativo com senha master e trilha RPC)
 
-### Configuração (`bitcoin.conf`)
+---
 
-- `prune=15000`, `dbcache=400`, `par=1`, `server=1`, `listen=1`.
-- ZMQ na porta interna **28332** (`hashblock`, `hashtx`, `rawblock`, `rawtx`, `sequence`).
+## Arquitetura e pastas
 
-### Trade-offs
+- `docker-compose.yml` (raiz): serviço `bitcoind` e rede `bitcoin-coder-net`
+- `infra/bitcoin/bitcoin.conf`: config do Core (RPC + ZMQ + prune)
+- `stack/docker-compose.yml`: backend, frontend, MariaDB, Caddy
+- `stack/backend/`: API e lógica de negócio
+- `stack/frontend/`: aplicação web cliente/admin
+- `stack/infra/caddy/Caddyfile`: TLS interno + reverse proxy
 
-- IBD da mainnet inteira ainda corre; o prune limita **armazenamento final**, não o download inicial.
-- Sem `txindex` com prune: `getrawtransaction` para txs muito antigas é limitado — documentado para demos.
-- Instâncias muito pequenas podem sincronizar devagar.
+---
 
-## Quick start
+## Montagem rápida (local)
 
-1. **Dois ficheiros de ambiente** (não commits com passwords reais):
-   - **Raiz** — só o que o `bitcoind` precisa (e as mesmas `BITCOIN_RPC_*` que o backend vai ler).
-   - **`stack/.env`** — MariaDB, Caddy, `SECRET_KEY`, admin bootstrap, portas `STACK_*`.
+### 1) Preparar variáveis de ambiente
 
 ```bash
 cp .env.example .env
 cp stack/.env.example stack/.env
 ```
 
-   Alinha **`BITCOIN_RPC_USER` / `BITCOIN_RPC_PASSWORD`** entre **`.env` na raiz** e o que o backend espera: o serviço **backend** carrega **`../.env`** e depois **`stack/.env`** (sem precisares de duplicar RPC na stack).
+Preencha no mínimo:
 
-2. Suba o **bitcoind** na raiz (cria a rede `bitcoin-coder-net` partilhada com a stack):
+- **raiz `.env`**: `BITCOIN_RPC_USER`, `BITCOIN_RPC_PASSWORD`, host/porta de bitcoind
+- **`stack/.env`**:
+  - `SECRET_KEY`
+  - `ADM_BOOTSTRAP_PASSWORD`
+  - `BITCOIN_OPERATOR_WALLET`
+  - `ADM_MASTER_WITHDRAW_PASSWORD` (saque lucro)
+  - (opcional) `BITREFILL_*` e `BOLTZ_*`
+
+### 2) Subir Bitcoin Core (raiz)
 
 ```bash
 docker compose up -d
 ```
 
-3. Suba a **stack** em `stack/`:
+### 3) Subir stack da aplicação
 
 ```bash
-cd stack && docker compose up -d --build
+cd stack
+docker compose up -d --build
 ```
 
-4. Saúde da API (porta **8200** no host por omissão, ver `STACK_BACKEND_HOST_PORT` em **`stack/.env`**):
+### 4) Verificar saúde
 
 ```bash
 curl http://localhost:8200/health
-curl http://localhost:8200/rpc/getblockchaininfo
 ```
 
-5. Abrir a UI: `https://localhost:9443` (mapeamento **9443→443** no Caddy; aceitar certificado interno na primeira vez).
+### 5) Abrir UI
 
-**UI:** área pública `/` (tema “Matrix” + ZeroConf); módulo operador `/adm` com login **no backend** (utilizador na MariaDB, bcrypt, cookie HTTP-only assinado com `SECRET_KEY`). Define `ADM_BOOTSTRAP_PASSWORD` em **`stack/.env`** na primeira subida para criar o utilizador `admin`. Consola RPC + ZMQ: `/adm/node`. Redirecionamentos: `/tools/node` e `/lab/rpc` → `/adm/node`.
+- Público/cliente: `https://localhost:9443/cliente`
+- Admin: `https://localhost:9443/adm`
 
-## HTTPS (local / IP)
+> Certificado é `tls internal` no Caddy; aceite o aviso no browser em ambiente local.
 
-O Caddy escuta **`:80` / `:443`** no contentor; no host **9080/9443** por omissão. Usa **`tls internal`**; aviso do browser é esperado sem domínio com Let’s Encrypt.
+---
 
-O **`stack/.env`** define **`CADDY_SITE_ADDRESSES`** e **`CADDY_DEFAULT_SNI`**. Se o host não estiver na lista: **ERR_SSL_PROTOCOL_ERROR**. Depois de editar: `cd stack && docker compose up -d --force-recreate caddy`.
+## Papel do Bitcoin Core (RPC) em cada fluxo
 
-Muitos **`curl`** no macOS não enviam SNI em URLs só com IPv4; define **`CADDY_DEFAULT_SNI`** coerente (ver **`stack/.env.example`**). Exemplo edge: `stack/infra/caddy/Caddyfile.edge.example`.
+## 1) Fluxos de cliente
 
-## Testes (backend)
+### Envio on-chain (`provider=internal`)
+
+- `getnewaddress`: gera endereço único de depósito por ordem
+- `listunspent`: detecta fundos no endereço da ordem
+- `walletcreatefundedpsbt` + `walletprocesspsbt` + `finalizepsbt`: monta/assina tx de payout
+- `sendrawtransaction`: transmite payout
+- `gettransaction`: atualiza estado de confirmação
+
+### Swap Lightning (Boltz)
+
+- Core faz a perna on-chain do swap:
+  - endereço de depósito local via `getnewaddress`
+  - detecção de depósito via `listunspent`/ZMQ
+  - envio para lockup da Boltz via PSBT + `sendrawtransaction`
+- Boltz retorna status externo (`status_raw`) e preimage; estado local é sincronizado.
+
+### Compras (Bitrefill)
+
+- Core recebe depósito do cliente e financia pagamento on-chain da invoice Bitrefill:
+  - detecção de depósito
+  - construção/assinatura/envio da tx
+  - confirmação de conclusão no estado da ordem
+
+## Papel do ZMQ nos fluxos
+
+O ZMQ do Bitcoin Core é usado como **canal de evento em tempo real** (principalmente `hashtx` e `hashblock`) para reduzir latência operacional.
+
+### Onde ele entra
+
+- Quando uma transação entra na mempool e toca a wallet do operador, o relay ZMQ publica evento.
+- O backend (`SwapOrderProcessor`) reage ao evento para casar a ordem e iniciar o processamento do payout mais cedo.
+- Resultado prático: o sistema costuma sair de `awaiting_deposit` para estados seguintes sem esperar ciclos longos de polling.
+
+### ZMQ vs polling (fallback)
+
+- **ZMQ é o caminho preferencial** para velocidade.
+- **Polling continua existindo** (`listunspent` via watcher/recovery) como fallback para:
+  - perda de evento
+  - reconexão de serviço
+  - cenários de rede instável
+
+Ou seja: não é “ZMQ ou polling”; é **ZMQ first + polling safety net** para robustez.
+
+---
+
+## 2) Fluxos administrativos
+
+### Saúde e diagnóstico do node
+
+- `getblockchaininfo`: estado da chain, blocks/headers/lag
+- `getmempoolinfo`: mempool size e mempoolminfee
+- `getwalletinfo` + `listwallets`/`loadwallet`/`createwallet`: estado da carteira operacional
+- Snapshot de ZMQ relay (último evento, conectado/desconectado)
+
+### Resgate de fundos
+
+- `listunspent`: identifica UTXOs presos no endereço de depósito da ordem
+- `walletcreatefundedpsbt` + `walletprocesspsbt` + `finalizepsbt` + `sendrawtransaction`
+- Retorno inclui detalhe RPC para auditoria operacional
+
+### Realização de lucro (saque admin)
+
+- Escopo: **somente UTXOs do endereço índice 0 (`fee-index-0`)**
+- Regra: envia 90% para destino, taxa 3 sat/vB, troco no índice 0
+- Pipeline RPC:
+  - `validateaddress`
+  - `listunspent` (fee-index-0)
+  - `walletcreatefundedpsbt`
+  - `walletprocesspsbt`
+  - `finalizepsbt`
+  - `sendrawtransaction`
+
+---
+
+## Fluxograma da aplicação
+
+```mermaid
+flowchart TD
+    A[Cliente cria ordem] --> B[Backend persiste ordem MariaDB]
+    B --> C[Bitcoin Core gera endereco de deposito]
+    C --> D[Cliente envia BTC on-chain]
+    D --> E[ZMQ hashtx + fallback listunspent]
+    E --> F[SwapOrderProcessor detecta deposito]
+    F --> G[Backend monta PSBT via RPC]
+    G --> H[walletprocesspsbt/finalizepsbt]
+    H --> I[sendrawtransaction]
+    I --> J[Ordem em confirming/provider_processing]
+    J --> K[Concluida paid_out]
+
+    J --> L[Provedor externo Boltz/Bitrefill]
+    L --> K
+
+    M[Admin /adm/node] --> N[Health summary + diagnostico]
+    M --> O[Historico e logs]
+    M --> P[Resgate de fundos]
+    M --> Q[Realizacao de lucro]
+```
+
+---
+
+## Operação e comandos úteis
+
+### Reiniciar serviços sem rebuild
+
+```bash
+docker compose -f stack/docker-compose.yml restart backend
+docker compose -f stack/docker-compose.yml restart frontend
+```
+
+### Rebuild (quando mudar dependências/Dockerfile)
+
+```bash
+cd stack
+docker compose up -d --build
+```
+
+### Testes backend
 
 ```bash
 cd stack
@@ -92,20 +216,33 @@ docker compose exec -T backend pip install -r requirements-dev.txt
 docker compose exec -T backend sh -lc 'PYTHONPATH=/app pytest tests/'
 ```
 
-## Segurança e mainnet
+---
 
-- **Mainnet** envolve valor real: montantes mínimos, **carteira dedicada** ao operador, backups conscientes.
-- **Não** expor RPC Bitcoin à Internet sem proteção (modelo actual: RPC só na rede Docker).
-- **Não** commitar passwords RPC, **SECRET_KEY**, `ADM_BOOTSTRAP_PASSWORD` ou segredos — `.env` / `stack/.env` locais e os `.env.example` só com placeholders.
-- **Admin web:** senha nunca vai no bundle do Vite; só **HTTPS** em produção e `COOKIE_SECURE=1` atrás do Caddy com TLS real.
+## Segurança operacional
 
-## Notas operacionais
+- Não expor RPC do Bitcoin Core na internet pública sem proteção.
+- Não commitar segredos (`SECRET_KEY`, senhas admin, chaves API, master password).
+- Use carteira operacional dedicada (`BITCOIN_OPERATOR_WALLET`).
+- Em produção, usar TLS válido e `COOKIE_SECURE=1`.
 
-- **Dois `.env`:** na **raiz** só variáveis do `docker-compose` do **bitcoind** + credenciais RPC partilhadas; em **`stack/.env`** toda a config da app (MariaDB, Caddy, `SECRET_KEY`, portas). Se tinhas um `.env` único antigo, parte o conteúdo para estes dois ficheiros (ou copia os exemplos e volta a preencher).
-- **Dois composes:** `docker compose down` **só em `stack/`** derruba MariaDB, API, frontend e Caddy; o **bitcoind** na raiz e o volume **bitcoin-data** mantêm-se.
-- **Nomes Docker:** projecto Compose `stack`; contentores `stack-mariadb`, `stack-backend`, etc. Contentores antigos noutros nomes podem colidir nas portas (**8200**, **5177**, **9080**, **9443**).
-- Rede **`bitcoin-coder-net`** e volumes nomeados (`bitcoin-coder_*`) mantêm compatibilidade com deploys anteriores do mesmo repositório.
+---
 
-## Roadmap (próxima fase)
+## Evoluções recomendadas
 
-- Modelos **MariaDB** (`flows` / eventos), endpoints de domínio, fluxo guiado na UI: endereço → pagamento na mempool (ZMQ) → segunda tx `sendrawtransaction` → estados persistidos.
+- Métricas e alertas externos (Prometheus/Grafana ou Datadog)
+- Retentativa com fila para integrações externas (Boltz/Bitrefill)
+- Jobs assíncronos com backoff persistente
+- RBAC admin (perfis e trilha de auditoria completa por usuário)
+- Testes e2e de fluxos críticos com cenários de falha RPC
+- Política explícita de fees dinâmica por ambiente/rede
+
+---
+
+## Status do MVP
+
+Este repositório já entrega um MVP operacional completo para demo técnica:
+
+- Fluxo cliente utilizável
+- Operação administrativa real
+- Integração Bitcoin Core ponta a ponta
+- Observabilidade mínima com diagnóstico e workers internos
