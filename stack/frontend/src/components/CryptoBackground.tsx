@@ -42,12 +42,12 @@ export function CryptoBackground() {
         particles.push({
           x: Math.random() * canvas.width,
           y: Math.random() * canvas.height,
-          size: 12 + Math.random() * 16,
-          speed: 0.15 + Math.random() * 0.35,
-          opacity: 0.03 + Math.random() * 0.08,
+          size: 16 + Math.random() * 24,
+          speed: 0.2 + Math.random() * 0.5,
+          opacity: 0.15 + Math.random() * 0.25,
           symbol: symbols[Math.floor(Math.random() * symbols.length)],
           rotation: Math.random() * Math.PI * 2,
-          rotationSpeed: (Math.random() - 0.5) * 0.008,
+          rotationSpeed: (Math.random() - 0.5) * 0.012,
         });
       }
     }
@@ -65,7 +65,7 @@ export function CryptoBackground() {
         canvas.height * 0.3,
         canvas.width * 0.25
       );
-      gradient1.addColorStop(0, "rgba(16, 185, 129, 0.08)");
+      gradient1.addColorStop(0, "rgba(16, 185, 129, 0.25)");
       gradient1.addColorStop(1, "transparent");
       ctx.fillStyle = gradient1;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -78,7 +78,7 @@ export function CryptoBackground() {
         canvas.height * 0.7,
         canvas.width * 0.2
       );
-      gradient2.addColorStop(0, "rgba(247, 147, 26, 0.05)");
+      gradient2.addColorStop(0, "rgba(247, 147, 26, 0.2)");
       gradient2.addColorStop(1, "transparent");
       ctx.fillStyle = gradient2;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -115,8 +115,8 @@ export function CryptoBackground() {
         }
       }
 
-      // Draw subtle grid lines
-      ctx.strokeStyle = "rgba(16, 185, 129, 0.02)";
+      // Draw grid lines
+      ctx.strokeStyle = "rgba(16, 185, 129, 0.08)";
       ctx.lineWidth = 1;
       const gridSize = 80;
       for (let x = 0; x < canvas.width; x += gridSize) {
