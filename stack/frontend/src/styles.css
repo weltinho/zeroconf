@@ -789,24 +789,17 @@ body {
 }
 
 .panel-rpc {
-  min-height: 340px;
+  height: 380px;
+  overflow-y: auto;
 }
 
 .panel-rpc > h2 {
   margin-bottom: 0.75rem;
 }
 
-.panel-rpc form,
-.panel-rpc .client-order-form {
-  display: flex;
-  flex-direction: column;
-  flex: 1;
-  min-height: 220px;
-}
-
-.panel-rpc .client-order-submit {
-  margin-top: auto;
-  padding-top: 1rem;
+.client-order-card {
+  height: 380px;
+  overflow-y: auto;
 }
 
 .panel-hint {
