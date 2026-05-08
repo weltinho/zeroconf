@@ -274,6 +274,7 @@ export function ClientAreaPage() {
 
   const pollTimerRef = useRef<number | null>(null);
   const initialOrderLoadedRef = useRef(false);
+  const pollCounterRef = useRef<Record<number, number>>({});
 
   const stopPolling = useCallback(() => {
     if (pollTimerRef.current !== null) {
@@ -287,7 +288,13 @@ export function ClientAreaPage() {
       stopPolling();
       setError("");
       try {
-        const r = await fetch(apiUrl(`/client/orders/${orderId}`));
+        const nextCount = (pollCounterRef.current[orderId] || 0) + 1;
+        pollCounterRef.current[orderId] = nextCount;
+        const useRecovery = nextCount % 10 === 0;
+        const path = useRecovery
+          ? `/client/orders/${orderId}?recovery=true`
+          : `/client/orders/${orderId}`;
+        const r = await fetch(apiUrl(path));
         const body = await r.json().catch(() => ({}));
         if (!r.ok) {
           throw new Error(body?.detail ?? `HTTP ${r.status}`);
@@ -553,6 +560,7 @@ export function ClientAreaPage() {
       }
       const resp = body as CreateOrderResponse;
       setCreated(resp);
+      pollCounterRef.current[resp.order_id] = 0;
       void pollOrder(resp.order_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao criar ordem");
@@ -595,6 +603,7 @@ export function ClientAreaPage() {
       setCreated(resp);
       setOrder(null);
       setDepositTxid(null);
+      pollCounterRef.current[resp.order_id] = 0;
       void pollOrder(resp.order_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao criar compra Bitrefill");

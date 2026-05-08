@@ -17,6 +17,7 @@ from app.models import SwapOrder, SwapOrderBitrefill, SwapOrderLog
 from app.routers.node import _ensure_wallet_loaded  # reuse wallet bootstrap logic
 from app.settings import settings
 from app.swap_logs import log_swap_step
+from app.swap_processor import SwapOrderProcessor
 from app.signet_demo import (
     BITREFILL_DEMO_STATES,
     bitrefill_get_order_demo_overlay,
@@ -247,6 +248,7 @@ def _bitrefill_gift_card_line(br: SwapOrderBitrefill, payload: str | None) -> st
 async def get_order(
     order_id: int,
     session: AsyncSession = Depends(get_session),
+    recovery: bool = False,
     demo_state: str | None = Query(
         None,
         description="Apenas signet + ordem Bitrefill: simula resposta GET nesse estado local.",
@@ -256,6 +258,41 @@ async def get_order(
     order = row.scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=404, detail="order not found")
+
+    # Recovery scan (como no fluxo Boltz): útil quando evento ZMQ foi perdido.
+    if recovery and order.status in {"awaiting_deposit", "processing", "deposit_detected", "provider_processing"}:
+        wallet = settings.bitcoin_operator_wallet.strip()
+        if wallet:
+            try:
+                await _ensure_wallet_loaded(wallet)
+                unspent = await rpc.call(
+                    "listunspent",
+                    [0, 9999999, [order.deposit_btc_address], True],
+                    wallet=wallet,
+                )
+                if isinstance(unspent, list) and unspent:
+                    event_txid = str(unspent[0].get("txid") or "").strip() or None
+                    await log_swap_step(
+                        session,
+                        order.id,
+                        "client.get_order.recovery",
+                        "UTXOs detectados via polling de recovery — disparando swap processor",
+                        {
+                            "utxo_count": len(unspent),
+                            "deposit_btc_address": order.deposit_btc_address,
+                        },
+                    )
+                    processor = SwapOrderProcessor(rpc)
+                    await processor._try_payout_order(session, wallet, order, event_txid=event_txid)
+            except Exception as exc:
+                await log_swap_step(
+                    session,
+                    order.id,
+                    "client.get_order.recovery",
+                    "recovery scan failed",
+                    {"error": str(exc)[:512]},
+                )
+
     await _refresh_confirmation_if_needed(session, order)
 
     br: SwapOrderBitrefill | None = None
