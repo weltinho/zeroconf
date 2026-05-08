@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +33,14 @@ from app.settings import settings
 from app.swap_logs import log_swap_step
 from app.deps import rpc
 from app.routers.node import _ensure_wallet_loaded
+from app.signet_demo import (
+    BOLTZ_DEMO_STATES,
+    SIGNET_DEMO_BOLTZ_SWAP_PREFIX,
+    boltz_get_response_demo_overlay,
+    chain_is_signet,
+    normalize_boltz_demo_state,
+    parse_bolt11_invoice_sats,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +105,14 @@ async def get_fees() -> Any:
     """Retorna fees atuais da Boltz + nossa taxa de serviço."""
     if not settings.boltz_enabled:
         raise HTTPException(status_code=503, detail="Boltz integration is disabled")
+    if await chain_is_signet():
+        return BoltzFeesResponse(
+            percentage=0.1,
+            miner_fee_sat=302,
+            our_fee_sat=OUR_FEE_SAT + _estimate_forward_fee_sats(),
+            min_amount_sat=25_000,
+            max_amount_sat=25_000_000,
+        )
     try:
         pairs_data = await get_submarine_pairs()
     except BoltzClientError as exc:
@@ -165,12 +182,90 @@ async def create_boltz_order(
         raise HTTPException(status_code=503, detail="Operator wallet not configured")
     try:
         await _ensure_wallet_loaded(wallet)
-        our_deposit_address = str(
-            await rpc.call("getnewaddress", ["boltz-swap", "bech32m"], wallet=wallet)
-        )
+        if await chain_is_signet():
+            our_deposit_address = str(
+                await rpc.call("getnewaddress", ["boltz-swap-signet", "bech32"], wallet=wallet)
+            )
+        else:
+            our_deposit_address = str(
+                await rpc.call("getnewaddress", ["boltz-swap", "bech32m"], wallet=wallet)
+            )
     except Exception as exc:
         logger.error("Failed to generate deposit address: %s", exc)
         raise HTTPException(status_code=500, detail="Failed to generate deposit address") from exc
+
+    # Signet: ordem persistida na BD sem chamar a API Boltz (LN real). GET com ``demo_state`` simula progressão.
+    if await chain_is_signet():
+        invoice_sats = parse_bolt11_invoice_sats(invoice) or 50_000
+        forward_fee_sat = _estimate_forward_fee_sats()
+        expected_onchain_sat = int(invoice_sats)
+        required_deposit_sats = expected_onchain_sat + OUR_FEE_SAT + forward_fee_sat
+        boltz_swap_id = f"{SIGNET_DEMO_BOLTZ_SWAP_PREFIX}{uuid.uuid4().hex[:20]}"
+        lockup_address = "tb1qsignetboltzlockup0000000000000000000000000000000000000000"
+        try:
+            refund_privkey_hex, refund_pubkey_hex = generate_refund_keypair()
+        except Exception as exc:
+            logger.error("Failed to generate refund keypair: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to generate refund keypair") from exc
+
+        swap_stub: dict[str, Any] = {
+            "id": boltz_swap_id,
+            "status": "invoice.set",
+            "address": lockup_address,
+            "expectedAmount": expected_onchain_sat,
+            "signetDemo": True,
+        }
+
+        order = SwapOrder(
+            output_sats=expected_onchain_sat,
+            destination_btc_address=lockup_address,
+            deposit_btc_address=our_deposit_address,
+            required_deposit_sats=required_deposit_sats,
+            fee_rate_sat_vb=_DEFAULT_FORWARD_FEE_RATE,
+            provider="boltz",
+            provider_id=boltz_swap_id,
+            status="awaiting_deposit",
+        )
+        session.add(order)
+        await session.flush()
+
+        await log_swap_step(
+            session,
+            order.id,
+            "boltz.create_order.signet_demo",
+            "Signet: swap Boltz simulado (sem API externa)",
+            {
+                "boltz_swap_id": boltz_swap_id,
+                "lockup_address": lockup_address,
+                "our_deposit_address": our_deposit_address,
+                "expected_onchain_amount_sat": expected_onchain_sat,
+                "required_deposit_sats": required_deposit_sats,
+            },
+        )
+
+        boltz_detail = SwapOrderBoltz(
+            swap_order_id=order.id,
+            boltz_swap_id=boltz_swap_id,
+            pair_id="BTC/BTC",
+            pair_hash="signet-demo",
+            invoice_bolt11=invoice,
+            lockup_address=lockup_address,
+            expected_onchain_amount_sat=expected_onchain_sat,
+            status_raw="invoice.set",
+            last_payload_json=json.dumps(swap_stub, ensure_ascii=True, separators=(",", ":")),
+            refund_pubkey_hex=refund_pubkey_hex,
+            refund_privkey_hex=refund_privkey_hex,
+        )
+        session.add(boltz_detail)
+        await session.commit()
+
+        return CreateBoltzOrderResponse(
+            order_id=order.id,
+            status=order.status,
+            deposit_btc_address=our_deposit_address,
+            expected_onchain_amount_sat=required_deposit_sats,
+            boltz_swap_id=boltz_swap_id,
+        )
 
     # 2. Obter pares Boltz (para extrair pair_hash e validar limites).
     try:
@@ -308,6 +403,10 @@ async def get_boltz_order(
     order_id: int,
     session: AsyncSession = Depends(get_session),
     recovery: bool = False,
+    demo_state: str | None = Query(
+        None,
+        description="Apenas signet: devolve o mesmo contrato GET que em produção, com campos desse estado local.",
+    ),
 ) -> Any:
     from sqlalchemy import select
 
@@ -322,7 +421,7 @@ async def get_boltz_order(
         raise HTTPException(status_code=404, detail="Boltz order not found")
 
     # Recovery: se o depósito chegou mas o ZMQ perdeu o evento, verifica listunspent.
-    if recovery and order.status == "awaiting_deposit":
+    if recovery and not demo_state and order.status == "awaiting_deposit":
         wallet = settings.bitcoin_operator_wallet.strip()
         if wallet:
             try:
@@ -380,7 +479,7 @@ async def get_boltz_order(
     if not lockup_tx_id and order.payout_txid:
         lockup_tx_id = order.payout_txid
 
-    return GetBoltzOrderResponse(
+    resp = GetBoltzOrderResponse(
         order_id=order.id,
         status=order.status,
         boltz_swap_id=boltz.boltz_swap_id if boltz else "",
@@ -393,3 +492,25 @@ async def get_boltz_order(
         lockup_tx_id=lockup_tx_id,
         preimage=preimage,
     )
+
+    raw_demo = (demo_state or "").strip()
+    if raw_demo:
+        normalized_demo = normalize_boltz_demo_state(raw_demo)
+        if normalized_demo is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"demo_state inválido. Use: {', '.join(BOLTZ_DEMO_STATES)}",
+            )
+        if not await chain_is_signet():
+            raise HTTPException(
+                status_code=422,
+                detail="demo_state só é permitido quando o nó Bitcoin está em signet.",
+            )
+        merged = boltz_get_response_demo_overlay(
+            base=resp.model_dump(),
+            demo_state=normalized_demo,
+            order_id=order.id,
+        )
+        return GetBoltzOrderResponse(**merged)
+
+    return resp

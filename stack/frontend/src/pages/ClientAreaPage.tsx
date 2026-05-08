@@ -13,6 +13,7 @@ type CreateOrderResponse = {
   output_sats: number;
   fee_rate_sat_vb: number;
   provider?: string;
+  bitrefill_gift_card_line?: string | null;
 };
 
 type GetOrderResponse = {
@@ -25,6 +26,7 @@ type GetOrderResponse = {
   payout_txid: string | null;
   last_rpc_status: string | null;
   provider?: string;
+  bitrefill_gift_card_line?: string | null;
 };
 
 type OrderLogEntry = {
@@ -199,6 +201,18 @@ const BOLTZ_STEPS: { key: string; label: string }[] = [
   { key: "provider_processing", label: "Processando Lightning" },
   { key: "paid_out", label: "Invoice paga" },
 ];
+
+/** Estados simulados em Signet (Compras) — alinhados aos que o backend usa na ordem. */
+const BITREFILL_STEPS: { key: string; label: string }[] = [
+  { key: "awaiting_deposit", label: "Aguardando depósito" },
+  { key: "deposit_detected", label: "Depósito detectado" },
+  { key: "provider_processing", label: "Invoice Bitrefill / payout" },
+  { key: "confirming", label: "Confirmando na rede" },
+  { key: "paid_out", label: "Concluído" },
+];
+
+/** Intervalo entre estados mock no servidor após depósito (8s; ver SIGNET_DEMO_PROGRESS_STEP_SEC). */
+const SIGNET_SIM_STEP_MS = 8000;
 
 export function ClientAreaPage() {
   const params = useParams<{ orderId?: string }>();
@@ -479,8 +493,10 @@ export function ClientAreaPage() {
             : `HTTP ${r.status}`;
         throw new Error(msg);
       }
-      setBoltzCreated(resp as CreateBoltzOrderResponse);
-      void pollBoltzOrder((resp as CreateBoltzOrderResponse).order_id);
+      const created = resp as CreateBoltzOrderResponse;
+      setBoltzCreated(created);
+      const oid = created.order_id;
+      void pollBoltzOrder(oid);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Erro ao criar swap Boltz");
     } finally {
@@ -576,26 +592,58 @@ export function ClientAreaPage() {
 
   const isBitrefillOrder =
     (order?.provider ?? created?.provider) === "bitrefill";
+  const orderAwaitingUserDeposit =
+    liveOrder &&
+    (liveOrder.status === "awaiting_deposit" || liveOrder.status === "created");
+  const orderDepositSeenByBackend =
+    liveOrder &&
+    !orderAwaitingUserDeposit &&
+    liveOrder.status !== "error";
 
   const liveBoltz = boltzOrder ?? boltzCreated;
   const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
-  const clientDepositAddress = boltzCreated?.deposit_btc_address ?? boltzOrder?.our_deposit_address ?? null;
+  const clientDepositAddress =
+    boltzCreated?.deposit_btc_address ??
+    boltzOrder?.deposit_btc_address ??
+    boltzOrder?.our_deposit_address ??
+    null;
   const boltzExpectedSat = boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null;
   const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
   const boltzLockupTxId = boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null;
   const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
   const boltzPreimage = boltzOrder?.preimage ?? null;
+  const boltzAwaitingUserDeposit = boltzStatus === "awaiting_deposit";
   const boltzStepIndex = BOLTZ_STEPS.findIndex((s) => s.key === boltzStatus);
+  const bitrefillStepIndex = BITREFILL_STEPS.findIndex(
+    (s) => s.key === String(order?.status ?? created?.status ?? ""),
+  );
 
   // Preview ao vivo — extrai sats da invoice BOLT11.
   const invoiceSats = useMemo(() => parseBolt11Sats(invoice), [invoice]);
   const invoicePreview = useMemo(() => {
-    if (!invoiceSats || !boltzFees) return null;
-    const percentFee = Math.ceil((invoiceSats * boltzFees.percentage) / 100);
-    const total = invoiceSats + percentFee + boltzFees.miner_fee_sat + boltzFees.our_fee_sat;
-    return { invoiceSats, percentFee, minerFee: boltzFees.miner_fee_sat, ourFee: boltzFees.our_fee_sat, total };
-  }, [invoiceSats, boltzFees]);
+    if (!invoiceSats) return null;
+    if (boltzFees) {
+      const percentFee = Math.ceil((invoiceSats * boltzFees.percentage) / 100);
+      const total = invoiceSats + percentFee + boltzFees.miner_fee_sat + boltzFees.our_fee_sat;
+      return {
+        invoiceSats,
+        percentFee,
+        minerFee: boltzFees.miner_fee_sat,
+        ourFee: boltzFees.our_fee_sat,
+        total,
+      };
+    }
+    if (chain === "signet") {
+      const minerFee = 200;
+      const ourFee = 1000;
+      const pct = 1;
+      const percentFee = Math.ceil((invoiceSats * pct) / 100);
+      const total = invoiceSats + percentFee + minerFee + ourFee;
+      return { invoiceSats, percentFee, minerFee, ourFee, total };
+    }
+    return null;
+  }, [invoiceSats, boltzFees, chain]);
   const isConfirming = order?.status === "confirming";
   const isPaidOut = order?.status === "paid_out";
   const showTrackingLinks = isConfirming || isPaidOut;
@@ -634,7 +682,32 @@ export function ClientAreaPage() {
         </div>
         <div className="badges">
           <span className="badge">REDE: {chain.toUpperCase()}</span>
+          {chain === "signet" ? (
+            <span
+              className="badge"
+              style={{
+                borderColor: "rgba(163, 230, 53, 0.45)",
+                background: "rgba(163, 230, 53, 0.12)",
+                color: "var(--color-warning, #a3e635)",
+              }}
+            >
+              Simulação
+            </span>
+          ) : null}
         </div>
+        {chain === "signet" ? (
+          <p
+            className="hero-meta"
+            role="note"
+            style={{
+              marginTop: "0.35rem",
+              color: "var(--color-warning, #a3e635)",
+              fontSize: "0.85rem",
+            }}
+          >
+            Node está em signet, portanto isso é uma simulação.
+          </p>
+        ) : null}
         <p className="hero-meta">{t.localeFixedBr}</p>
       </header>
 
@@ -691,6 +764,26 @@ export function ClientAreaPage() {
                 Compras
               </button>
             </div>
+
+            {chain === "signet" && (mode === "lightning" || mode === "compras") ? (
+              <p
+                className="panel-hint"
+                style={{
+                  marginTop: "-0.25rem",
+                  marginBottom: "0.75rem",
+                  color: "var(--color-warning, #a3e635)",
+                }}
+              >
+                <strong>Node está em signet, portanto isso é uma simulação.</strong> O endereço na tela é o de
+                depósito da ordem (como em mainnet): envia tu a transação on-chain para esse endereço. Quando o
+                nó (ZMQ) deteta o receive na carteira operador, o backend avança a BD em modo mock (~
+                {Math.round(SIGNET_SIM_STEP_MS / 100) / 10}s entre estados). Para QA manual:{" "}
+                <code style={{ fontSize: "0.75em" }}>?demo_state=…</code> nos GETs. Swap:{" "}
+                <code style={{ fontSize: "0.75em" }}>POST /client/boltz/orders</code> sem Boltz; Compras:{" "}
+                <code style={{ fontSize: "0.75em" }}>POST /client/bitrefill/orders</code> com API Bitrefill se
+                configurada.
+              </p>
+            ) : null}
 
             {error ? <p className="error">{error}</p> : null}
 
@@ -773,11 +866,22 @@ export function ClientAreaPage() {
                       <span>+{(invoicePreview.percentFee + invoicePreview.minerFee + invoicePreview.ourFee).toLocaleString()} sats</span>
                     </div>
                     <hr style={{ border: "none", borderTop: "1px solid rgba(0,255,70,0.2)", margin: "0.4rem 0" }} />
-                    <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", fontWeight: "bold", color: invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0) ? "#f87171" : "inherit" }}>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: "1rem",
+                        fontWeight: "bold",
+                        color:
+                          chain !== "signet" && invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0)
+                            ? "#f87171"
+                            : "inherit",
+                      }}
+                    >
                       <span>Total a depositar</span>
                       <span>{invoicePreview.total.toLocaleString()} sats ({satsToBtc(invoicePreview.total)} BTC)</span>
                     </div>
-                    {invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0) && (
+                    {chain !== "signet" && invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0) && (
                       <p style={{ margin: "0.4rem 0 0", color: "#f87171", fontSize: "0.78rem" }}>
                         ⚠ Invoice abaixo do mínimo ({(boltzFees?.min_amount_sat ?? 0).toLocaleString()} sats)
                       </p>
@@ -786,7 +890,16 @@ export function ClientAreaPage() {
                 )}
 
                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                  <button type="submit" disabled={creating || !invoice.trim() || (invoicePreview != null && invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0))}>
+                  <button
+                    type="submit"
+                    disabled={
+                      creating ||
+                      !invoice.trim() ||
+                      (chain !== "signet" &&
+                        invoicePreview != null &&
+                        invoicePreview.invoiceSats < (boltzFees?.min_amount_sat ?? 0))
+                    }
+                  >
                     {creating ? "Criando…" : "Criar swap"}
                   </button>
                 </div>
@@ -998,7 +1111,7 @@ export function ClientAreaPage() {
                             : i === boltzStepIndex
                             ? "rgba(0,255,70,0.28)"
                             : "rgba(255,255,255,0.04)",
-                        color: i <= boltzStepIndex ? "var(--mx-green, #00ff46)" : "var(--mx-muted)",
+                        color: i <= boltzStepIndex ? "var(--mx-green, #00ff46)" : "var(--fc-muted)",
                         border:
                           i === boltzStepIndex
                             ? "1px solid rgba(0,255,70,0.5)"
@@ -1018,8 +1131,18 @@ export function ClientAreaPage() {
                 <>
                   <div className="client-inline-copy">
                     <p>
-                      Deposite{" "}
-                      <span className="client-highlight-value">{boltzExpectedBtc} BTC</span>
+                      {boltzAwaitingUserDeposit ? (
+                        <>
+                          Deposite{" "}
+                          <span className="client-highlight-value">{boltzExpectedBtc} BTC</span>
+                        </>
+                      ) : (
+                        <>
+                          <strong>Depósito detectado</strong> — já registámos o teu envio na carteira. Montante de
+                          referência:{" "}
+                          <span className="client-highlight-value">{boltzExpectedBtc} BTC</span>
+                        </>
+                      )}
                     </p>
                     <button
                       type="button"
@@ -1035,8 +1158,17 @@ export function ClientAreaPage() {
                   </div>
                   <div className="client-inline-copy">
                     <p>
-                      Em{" "}
-                      <span className="client-highlight-address">{clientDepositAddress}</span>
+                      {boltzAwaitingUserDeposit ? (
+                        <>
+                          Em{" "}
+                          <span className="client-highlight-address">{clientDepositAddress}</span>
+                        </>
+                      ) : (
+                        <>
+                          Endereço (o mesmo que usaste):{" "}
+                          <span className="client-highlight-address">{clientDepositAddress}</span>
+                        </>
+                      )}
                     </p>
                     <button
                       type="button"
@@ -1130,9 +1262,58 @@ export function ClientAreaPage() {
                   </>
                 )}
               </p>
+              {isBitrefillOrder && bitrefillStepIndex >= 0 ? (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "0.15rem",
+                    margin: "0.45rem 0 0.75rem",
+                    fontSize: "0.62rem",
+                    flexWrap: "wrap",
+                  }}
+                >
+                  {BITREFILL_STEPS.map((s, i) => (
+                    <div
+                      key={s.key}
+                      style={{
+                        flex: "1 1 18%",
+                        minWidth: "4.5rem",
+                        padding: "0.28rem 0.08rem",
+                        textAlign: "center",
+                        borderRadius: "4px",
+                        background:
+                          i < bitrefillStepIndex
+                            ? "rgba(0,255,70,0.12)"
+                            : i === bitrefillStepIndex
+                              ? "rgba(0,255,70,0.28)"
+                              : "rgba(255,255,255,0.04)",
+                        color:
+                          i <= bitrefillStepIndex ? "var(--mx-green, #00ff46)" : "var(--fc-muted)",
+                        border:
+                          i === bitrefillStepIndex
+                            ? "1px solid rgba(0,255,70,0.5)"
+                            : "1px solid transparent",
+                        lineHeight: 1.25,
+                      }}
+                    >
+                      {i < bitrefillStepIndex ? "✓ " : i === bitrefillStepIndex ? "▶ " : ""}
+                      {s.label}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
               <div className="client-inline-copy">
                 <p>
-                  Deposite <span className="client-highlight-value">{requiredBtc} BTC</span>
+                  {orderDepositSeenByBackend ? (
+                    <>
+                      <strong>Depósito detectado</strong> — já registámos o teu envio na carteira. Montante de
+                      referência: <span className="client-highlight-value">{requiredBtc} BTC</span>
+                    </>
+                  ) : (
+                    <>
+                      Deposite <span className="client-highlight-value">{requiredBtc} BTC</span>
+                    </>
+                  )}
                 </p>
                 <button
                   type="button"
@@ -1147,7 +1328,16 @@ export function ClientAreaPage() {
               </div>
               <div className="client-inline-copy">
                 <p>
-                  Em <span className="client-highlight-address">{liveOrder.deposit_btc_address}</span>
+                  {orderDepositSeenByBackend ? (
+                    <>
+                      Endereço (o mesmo que usaste):{" "}
+                      <span className="client-highlight-address">{liveOrder.deposit_btc_address}</span>
+                    </>
+                  ) : (
+                    <>
+                      Em <span className="client-highlight-address">{liveOrder.deposit_btc_address}</span>
+                    </>
+                  )}
                 </p>
                 <button
                   type="button"
@@ -1162,6 +1352,25 @@ export function ClientAreaPage() {
               <div style={{ margin: "0.75rem 0" }}>
                 <AddressQRCode value={liveOrder.deposit_btc_address} size={160} />
               </div>
+              {isBitrefillOrder && liveOrder.bitrefill_gift_card_line ? (
+                <div className="client-success-box" style={{ marginBottom: "0.75rem" }}>
+                  <p className="client-success-title">Gift card</p>
+                  <div className="client-inline-copy" style={{ alignItems: "flex-start" }}>
+                    <p style={{ margin: 0, whiteSpace: "pre-line", flex: 1, fontSize: "0.85rem", lineHeight: 1.45 }}>
+                      {liveOrder.bitrefill_gift_card_line}
+                    </p>
+                    <button
+                      type="button"
+                      className="copy-icon-button"
+                      aria-label="Copiar dados do gift card"
+                      title="Copiar"
+                      onClick={() => navigator.clipboard.writeText(liveOrder.bitrefill_gift_card_line ?? "")}
+                    >
+                      ⧉
+                    </button>
+                  </div>
+                </div>
+              ) : null}
               {isBitrefillOrder ? (
                 <p className="panel-hint">
                   Depósito único em BTC: inclui produto Bitrefill, rede e margem de cotação. Quando detectarmos pagamento,

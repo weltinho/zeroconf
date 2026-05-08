@@ -13,6 +13,14 @@ from app.models import SwapOrder, SwapOrderBitrefill
 from app.routers.node import _ensure_fee_address_index0
 from app.routers.node import _ensure_wallet_loaded
 from app.settings import settings
+from app.signet_demo import (
+    chain_is_signet,
+    is_signet_demo_boltz_swap_id,
+    run_signet_boltz_demo_progression,
+    run_signet_bitrefill_demo_progression,
+    sats_sent_to_address_in_decoded_tx,
+    schedule_signet_demo_task,
+)
 from app.swap_logs import log_swap_step
 
 MIN_SWAP_FEE_SATS = 1000
@@ -146,6 +154,199 @@ class SwapOrderProcessor:
     def __init__(self, rpc: BitcoinRpcClient) -> None:
         self._rpc = rpc
 
+    async def _decode_wallet_tx(self, wallet: str, txid: str) -> dict[str, Any] | None:
+        try:
+            tx = await self._rpc.call("gettransaction", [txid], wallet=wallet)
+        except BitcoinRpcError:
+            return None
+        except Exception:
+            return None
+        if not isinstance(tx, dict):
+            return None
+        hex_raw = tx.get("hex")
+        if not isinstance(hex_raw, str) or not hex_raw:
+            try:
+                r = await self._rpc.call("getrawtransaction", [txid, False], wallet=wallet)
+                hex_raw = r if isinstance(r, str) else ""
+            except BitcoinRpcError:
+                hex_raw = ""
+            except Exception:
+                hex_raw = ""
+        if not hex_raw:
+            return None
+        try:
+            dec = await self._rpc.call("decoderawtransaction", [hex_raw])
+        except BitcoinRpcError:
+            return None
+        except Exception:
+            return None
+        return dec if isinstance(dec, dict) else None
+
+    async def _maybe_handle_signet_demo(
+        self,
+        session: AsyncSession,
+        wallet: str,
+        order: SwapOrder,
+        event_txid: str | None,
+    ) -> bool:
+        """Signet: depósito real no endereço da ordem (como mainnet); depois mocks na BD."""
+
+        if not await chain_is_signet():
+            return False
+        if order.provider == "boltz" and is_signet_demo_boltz_swap_id(order.provider_id):
+            return await self._signet_demo_boltz_deposit(session, wallet, order, event_txid)
+        if order.provider == "bitrefill":
+            return await self._signet_demo_bitrefill_deposit(session, wallet, order, event_txid)
+        return False
+
+    async def _signet_demo_collect_sats(
+        self,
+        wallet: str,
+        order: SwapOrder,
+    ) -> tuple[list[dict[str, Any]], int]:
+        try:
+            unspent = await self._rpc.call(
+                "listunspent",
+                [0, 9999999, [order.deposit_btc_address], True],
+                wallet=wallet,
+            )
+        except Exception:
+            return [], 0
+        if not isinstance(unspent, list):
+            return [], 0
+        utxos: list[dict[str, Any]] = []
+        total_sats = 0
+        for u in unspent:
+            if not isinstance(u, dict):
+                continue
+            if str(u.get("address") or "") != order.deposit_btc_address:
+                continue
+            if not u.get("spendable", True):
+                continue
+            sats = _btc_to_sats(u.get("amount"))
+            if sats <= 0:
+                continue
+            txid = str(u.get("txid") or "")
+            vout = u.get("vout")
+            if not txid or not isinstance(vout, int):
+                continue
+            utxos.append({"txid": txid, "vout": vout})
+            total_sats += sats
+        return utxos, total_sats
+
+    async def _signet_demo_boltz_deposit(
+        self,
+        session: AsyncSession,
+        wallet: str,
+        order: SwapOrder,
+        event_txid: str | None,
+    ) -> bool:
+        import json
+
+        from sqlalchemy import select as sa_select
+
+        from app.models import SwapOrderBoltz as SOB
+
+        dep = (order.deposit_btc_address or "").strip()
+        paid_from_event = 0
+        if event_txid and dep:
+            decoded = await self._decode_wallet_tx(wallet, event_txid)
+            if isinstance(decoded, dict):
+                paid_from_event = sats_sent_to_address_in_decoded_tx(decoded, dep)
+
+        _utxos, total_from_utxo = await self._signet_demo_collect_sats(wallet, order)
+        total_sats = max(total_from_utxo, paid_from_event)
+
+        if total_sats < int(order.required_deposit_sats):
+            order.actual_deposit_sats = total_sats
+            order.last_error = (
+                f"signet.demo underpaid: {total_sats} sats / need {int(order.required_deposit_sats)}"
+            )
+            await log_swap_step(
+                session,
+                order.id,
+                "signet.demo.deposit",
+                "depósito insuficiente para demo",
+                {"total_sats": total_sats, "required": int(order.required_deposit_sats)},
+            )
+            return True
+
+        order.status = "deposit_detected"
+        order.actual_deposit_sats = total_sats
+        order.last_error = None
+        res_b = await session.execute(sa_select(SOB).where(SOB.swap_order_id == order.id))
+        boltz = res_b.scalar_one_or_none()
+        if boltz:
+            if event_txid:
+                boltz.deposit_tx_id = event_txid
+            boltz.status_raw = "transaction.mempool"
+            boltz.last_payload_json = json.dumps(
+                {
+                    "status": "transaction.mempool",
+                    "signetDemo": True,
+                    "deposit_txid": event_txid,
+                },
+                ensure_ascii=True,
+                separators=(",", ":"),
+            )
+        await log_swap_step(
+            session,
+            order.id,
+            "signet.demo.deposit",
+            "depósito detetado — agendando progressão mock",
+            {"total_sats": total_sats, "event_txid": event_txid},
+        )
+        schedule_signet_demo_task(
+            run_signet_boltz_demo_progression(order.id, event_txid or ""),
+        )
+        return True
+
+    async def _signet_demo_bitrefill_deposit(
+        self,
+        session: AsyncSession,
+        wallet: str,
+        order: SwapOrder,
+        event_txid: str | None,
+    ) -> bool:
+        dep = (order.deposit_btc_address or "").strip()
+        paid_from_event = 0
+        if event_txid and dep:
+            decoded = await self._decode_wallet_tx(wallet, event_txid)
+            if isinstance(decoded, dict):
+                paid_from_event = sats_sent_to_address_in_decoded_tx(decoded, dep)
+
+        _utxos, total_from_utxo = await self._signet_demo_collect_sats(wallet, order)
+        total_sats = max(total_from_utxo, paid_from_event)
+
+        if total_sats < int(order.required_deposit_sats):
+            order.actual_deposit_sats = total_sats
+            order.last_error = (
+                f"signet.demo underpaid: {total_sats} sats / need {int(order.required_deposit_sats)}"
+            )
+            await log_swap_step(
+                session,
+                order.id,
+                "signet.demo.deposit",
+                "depósito insuficiente (Bitrefill signet)",
+                {"total_sats": total_sats},
+            )
+            return True
+
+        order.status = "deposit_detected"
+        order.actual_deposit_sats = total_sats
+        order.last_error = None
+        await log_swap_step(
+            session,
+            order.id,
+            "signet.demo.deposit",
+            "depósito detetado (Bitrefill signet) — progressão mock",
+            {"total_sats": total_sats, "event_txid": event_txid},
+        )
+        schedule_signet_demo_task(
+            run_signet_bitrefill_demo_progression(order.id, event_txid or ""),
+        )
+        return True
+
     async def handle_hashtx(self, txid: str) -> None:
         wallet = settings.bitcoin_operator_wallet.strip()
         if not wallet:
@@ -188,28 +389,31 @@ class SwapOrderProcessor:
         async with factory() as session:
             for addr in received_addresses:
                 row = await session.execute(
-                    select(SwapOrder).where(
+                    select(SwapOrder)
+                    .where(
                         SwapOrder.deposit_btc_address == addr,
                         SwapOrder.status.in_(["awaiting_deposit", "processing"]),
                     )
+                    .order_by(SwapOrder.id.asc())
                 )
-                order = row.scalar_one_or_none()
-                if order is None:
-                    continue
-                if order.payout_txid:
-                    continue
-                await log_swap_step(
-                    session,
-                    order.id,
-                    "handle_hashtx.match_order",
-                    "order matched from incoming wallet tx",
-                    {"event_txid": txid, "deposit_btc_address": addr},
-                )
-                await self._try_payout_order(session, wallet, order, event_txid=txid)
+                for order in row.scalars().all():
+                    if order.payout_txid:
+                        continue
+                    await log_swap_step(
+                        session,
+                        order.id,
+                        "handle_hashtx.match_order",
+                        "order matched from incoming wallet tx",
+                        {"event_txid": txid, "deposit_btc_address": addr},
+                    )
+                    await self._try_payout_order(session, wallet, order, event_txid=txid)
 
             await session.commit()
 
     async def _try_payout_order(self, session: AsyncSession, wallet: str, order: SwapOrder, event_txid: str | None = None) -> None:
+        if await self._maybe_handle_signet_demo(session, wallet, order, event_txid):
+            return
+
         order.status = "processing"
         await log_swap_step(
             session,

@@ -19,7 +19,7 @@ from app.db import get_session_factory
 from app.models import SwapOrder, SwapOrderBoltz
 from app.routers.client_boltz import boltz_status_to_local
 from app.settings import settings
-from app.swap_logs import log_swap_step
+from app.signet_demo import is_signet_demo_boltz_swap_id
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,8 @@ async def _poll_once() -> None:
 
 async def _poll_order(order_id: int, boltz_swap_id: str | None) -> None:
     """Consulta status de uma única ordem Boltz e atualiza BD se houve mudança."""
+    if is_signet_demo_boltz_swap_id(boltz_swap_id):
+        return
     if not boltz_swap_id:
         logger.warning("Boltz order %d has no provider_id, skipping poll", order_id)
         return

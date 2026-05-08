@@ -4,17 +4,25 @@ from decimal import Decimal, InvalidOperation, ROUND_CEILING
 from uuid import uuid4
 from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import rpc
 from app.db import get_session
-from app.models import SwapOrder, SwapOrderLog
+from app.bitrefill_client import BitrefillClientError, bitrefill_get_invoice
+from app.bitrefill_fulfillment import extract_redeem_payload_from_invoice
+from app.models import SwapOrder, SwapOrderBitrefill, SwapOrderLog
 from app.routers.node import _ensure_wallet_loaded  # reuse wallet bootstrap logic
 from app.settings import settings
 from app.swap_logs import log_swap_step
+from app.signet_demo import (
+    BITREFILL_DEMO_STATES,
+    bitrefill_get_order_demo_overlay,
+    chain_is_signet,
+    normalize_bitrefill_demo_state,
+)
 
 router = APIRouter(prefix="/client", tags=["client"])
 MIN_SWAP_FEE_SATS = 1000
@@ -195,6 +203,7 @@ class GetOrderResponse(BaseModel):
     payout_txid: str | None
     last_rpc_status: str | None
     provider: str = Field(default="internal")
+    bitrefill_gift_card_line: str | None = None
 
 
 async def _refresh_confirmation_if_needed(session: AsyncSession, order: SwapOrder) -> None:
@@ -226,18 +235,71 @@ async def _refresh_confirmation_if_needed(session: AsyncSession, order: SwapOrde
     )
 
 
+def _bitrefill_gift_card_line(br: SwapOrderBitrefill, payload: str | None) -> str | None:
+    text = (payload or "").strip()
+    if not text:
+        return None
+    label = (br.product_name_snapshot or "").strip() or (br.product_id or "").strip() or "produto escolhido"
+    return f"Seu gift card de {label} é:\n{text}"
+
+
 @router.get("/orders/{order_id}", response_model=GetOrderResponse)
-async def get_order(order_id: int, session: AsyncSession = Depends(get_session)) -> Any:
+async def get_order(
+    order_id: int,
+    session: AsyncSession = Depends(get_session),
+    demo_state: str | None = Query(
+        None,
+        description="Apenas signet + ordem Bitrefill: simula resposta GET nesse estado local.",
+    ),
+) -> Any:
     row = await session.execute(select(SwapOrder).where(SwapOrder.id == order_id))
     order = row.scalar_one_or_none()
     if order is None:
         raise HTTPException(status_code=404, detail="order not found")
     await _refresh_confirmation_if_needed(session, order)
+
+    br: SwapOrderBitrefill | None = None
+    redeem_for_line: str | None = None
+    if (order.provider or "") == "bitrefill":
+        res_b = await session.execute(
+            select(SwapOrderBitrefill).where(SwapOrderBitrefill.swap_order_id == order.id)
+        )
+        br = res_b.scalar_one_or_none()
+        if (
+            br
+            and order.status in {"confirming", "paid_out"}
+            and (br.bitrefill_invoice_id or "").strip()
+            and not (br.bitrefill_redeem_payload or "").strip()
+        ):
+            try:
+                raw_inv = await bitrefill_get_invoice(br.bitrefill_invoice_id.strip())
+                extracted = extract_redeem_payload_from_invoice(raw_inv)
+                if extracted:
+                    br.bitrefill_redeem_payload = extracted
+                    await log_swap_step(
+                        session,
+                        order.id,
+                        "bitrefill.redeem_sync",
+                        "redeem data stored from Bitrefill invoice",
+                        {"bitrefill_invoice_id": br.bitrefill_invoice_id},
+                    )
+            except BitrefillClientError as exc:
+                await log_swap_step(
+                    session,
+                    order.id,
+                    "bitrefill.redeem_sync",
+                    "Bitrefill invoice fetch failed",
+                    {"error": str(exc)[:512], "status_code": exc.status_code},
+                )
+        if br and (br.bitrefill_redeem_payload or "").strip():
+            redeem_for_line = br.bitrefill_redeem_payload.strip()
+
     # Compatibilidade com ordens antigas: mensagens de progresso não são erro.
     if order.status in {"confirming", "paid_out"} and order.last_error:
         order.last_error = None
     await session.commit()
-    return GetOrderResponse(
+    gift_line = _bitrefill_gift_card_line(br, redeem_for_line) if br else None
+    resp = GetOrderResponse(
         order_id=order.id,
         status=order.status,
         deposit_btc_address=order.deposit_btc_address,
@@ -247,7 +309,35 @@ async def get_order(order_id: int, session: AsyncSession = Depends(get_session))
         payout_txid=order.payout_txid,
         last_rpc_status=order.last_error,
         provider=order.provider or "internal",
+        bitrefill_gift_card_line=gift_line,
     )
+
+    raw_demo = (demo_state or "").strip()
+    if raw_demo:
+        normalized = normalize_bitrefill_demo_state(raw_demo)
+        if normalized is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"demo_state inválido. Use: {', '.join(BITREFILL_DEMO_STATES)}",
+            )
+        if not await chain_is_signet():
+            raise HTTPException(
+                status_code=422,
+                detail="demo_state só é permitido quando o nó Bitcoin está em signet.",
+            )
+        if (order.provider or "") != "bitrefill":
+            raise HTTPException(
+                status_code=422,
+                detail="demo_state aplica-se apenas a ordens Compras (provider=bitrefill).",
+            )
+        merged = bitrefill_get_order_demo_overlay(
+            base=resp.model_dump(),
+            demo_state=normalized,
+            order_id=order.id,
+        )
+        return GetOrderResponse(**merged)
+
+    return resp
 
 
 class OrderLogEntry(BaseModel):

@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     # Spread fixo de serviço em satoshis por ordem (produto; ver backlog Bitrefill).
     bitrefill_spread_sat: int = 1000
 
+    # Signet lab (depósito manual no endereço da ordem, como mainnet).
+    signet_demo_trigger_address: str = ""
+    signet_demo_deposit_address: str = ""
+    # Segundos entre estados mock após depósito detetado (Boltz/Compras signet).
+    signet_demo_progress_step_sec: float = 8.0
+
     # Endereço reservado para taxa/depósito operacional (índice lógico 0 no painel).
     bitcoin_fee_address_label: str = "fee-index-0"
 

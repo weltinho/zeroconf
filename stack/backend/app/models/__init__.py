@@ -175,6 +175,9 @@ class SwapOrderBitrefill(Base):
 
     bitrefill_invoice_id: Mapped[str | None] = mapped_column(String(160), nullable=True, index=True)
 
+    # Texto de resgate (código/PIN/link/instruções) após sync com GET /invoices/{id} (estado entregue).
+    bitrefill_redeem_payload: Mapped[str | None] = mapped_column(Text, nullable=True)
+
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
