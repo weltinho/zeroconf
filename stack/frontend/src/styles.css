@@ -788,6 +788,10 @@ body {
   font-weight: 600;
 }
 
+.panel-rpc {
+  min-height: 320px;
+}
+
 .panel-hint {
   margin: 0.25rem 0 0.5rem;
   font-size: 0.8125rem;
