@@ -44,7 +44,7 @@ export function MatrixRain() {
       return {
         x,
         y: Math.random() * -300,
-        speed: 0.8 + Math.random() * 0.6, // Velocidade em pixels por frame
+        speed: 2.5 + Math.random() * 2, // Velocidade mais rápida
         chars,
         active: Math.random() > 0.5, // 50% das colunas ativas
       };
@@ -115,8 +115,8 @@ export function MatrixRain() {
         // Move a coluna para baixo
         col.y += col.speed;
 
-        // Troca caracteres raramente (0.5% chance por frame)
-        if (Math.random() < 0.005) {
+        // Troca caracteres com frequência moderada (3% chance por frame)
+        if (Math.random() < 0.03) {
           const idx = Math.floor(Math.random() * col.chars.length);
           const isCrypto = Math.random() < 0.30;
           col.chars[idx] = {
@@ -138,8 +138,8 @@ export function MatrixRain() {
     resize();
     window.addEventListener("resize", resize);
 
-    // 20fps para animação mais lenta e calma
-    const intervalId = setInterval(draw, 50);
+    // 30fps para animação fluida
+    const intervalId = setInterval(draw, 33);
 
     return () => {
       window.removeEventListener("resize", resize);
