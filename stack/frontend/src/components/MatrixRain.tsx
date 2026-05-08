@@ -44,7 +44,7 @@ export function MatrixRain() {
       return {
         x,
         y: Math.random() * -300,
-        speed: 2.5 + Math.random() * 2, // Velocidade mais rápida
+        speed: 4 + Math.random() * 3, // Velocidade rápida
         chars,
         active: Math.random() > 0.5, // 50% das colunas ativas
       };
