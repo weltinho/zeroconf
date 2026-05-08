@@ -56,8 +56,9 @@ async def lifespan(app: FastAPI):
 
     # ZMQ em task paralela: não atrasa o primeiro `yield` (bind HTTP / aceitar pedidos).
     # Também registra processadores internos (ex.: swap orders) no stream hashtx.
+    processor = SwapOrderProcessor(rpc)
     try:
-        zmq_relay.add_hashtx_listener(SwapOrderProcessor(rpc).handle_hashtx)
+        zmq_relay.add_hashtx_listener(processor.handle_hashtx)
     except Exception:
         logger.exception("Falha ao registrar SwapOrderProcessor no relay ZMQ")
 
@@ -72,6 +73,21 @@ async def lifespan(app: FastAPI):
             logger.exception("Falha ao iniciar relay ZMQ")
 
     zmq_task.add_done_callback(_zmq_done)
+
+    # Watcher de depósitos por polling RPC (fallback para perdas de evento ZMQ/UI).
+    from app.deposit_watcher import run_deposit_watcher
+
+    deposit_watch_task = asyncio.create_task(run_deposit_watcher(processor))
+
+    def _deposit_watcher_done(t: asyncio.Task[None]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("Deposit watcher encerrou com erro")
+
+    deposit_watch_task.add_done_callback(_deposit_watcher_done)
 
     # Boltz poller: monitora ordens ativas periodicamente (apenas se habilitado).
     boltz_poll_task: asyncio.Task[None] | None = None
@@ -98,6 +114,12 @@ async def lifespan(app: FastAPI):
             await boltz_poll_task
         except asyncio.CancelledError:
             pass
+
+    deposit_watch_task.cancel()
+    try:
+        await deposit_watch_task
+    except asyncio.CancelledError:
+        pass
 
     await zmq_relay.stop()
     await rpc.aclose()
