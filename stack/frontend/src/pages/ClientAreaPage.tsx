@@ -1,7 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiUrl } from "../api/url";
-import { AppLogo } from "../components/AppLogo";
 import AddressQRCode from "../components/AddressQRCode";
 import { getUiText } from "../i18n";
 import { Combobox, type ComboboxOption, getCountryFlag, getCategoryIcon } from "../components/Combobox";
@@ -898,46 +897,39 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
 
   return (
     <main className="layout">
-      {/* Compact Header */}
-      <header className="client-page-header">
-        <div className="client-page-header-main">
-          <Link to="/" style={{ display: "inline-block" }}>
-            <AppLogo className="hero-logo" variant="matrix" aria-label={t.logoAriaLabel} style={{ height: "40px" }} />
-          </Link>
-          <div className="badges" style={{ marginTop: "0.5rem" }}>
-            <span className="badge">REDE: {chain.toUpperCase()}</span>
-            {chain === "signet" && (
-              <span
-                className="badge"
-                style={{
-                  borderColor: "rgba(163, 230, 53, 0.45)",
-                  background: "rgba(163, 230, 53, 0.12)",
-                  color: "var(--warning, #eab308)",
-                }}
-              >
-                Simulação
-              </span>
-            )}
-          </div>
-        </div>
-        <div className="client-page-actions">
-          {formLocked && (
-            <DropdownMenu
-              items={[
-                {
-                  label: "Nova operação",
-                  onClick: resetToNewOrder,
-                  icon: (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                      <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                    </svg>
-                  ),
-                },
-              ]}
-            />
+      {/* Status bar simples - sem logo duplicado */}
+      <div className="client-status-bar">
+        <div className="badges">
+          <span className="badge">REDE: {chain.toUpperCase()}</span>
+          {chain === "signet" && (
+            <span
+              className="badge"
+              style={{
+                borderColor: "rgba(163, 230, 53, 0.45)",
+                background: "rgba(163, 230, 53, 0.12)",
+                color: "var(--warning, #eab308)",
+              }}
+            >
+              Simulacao
+            </span>
           )}
         </div>
-      </header>
+        {formLocked && (
+          <DropdownMenu
+            items={[
+              {
+                label: "Nova operacao",
+                onClick: resetToNewOrder,
+                icon: (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                ),
+              },
+            ]}
+          />
+        )}
+      </div>
 
       <div className="workspace client-hml-workspace">
         <div className="client-hml-left">

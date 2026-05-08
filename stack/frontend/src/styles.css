@@ -1905,6 +1905,15 @@ pre {
    IMPROVED CLIENT PAGE LAYOUT
    ============================================ */
 
+.client-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.5rem 0;
+}
+
 .client-page-header {
   display: flex;
   align-items: flex-start;
