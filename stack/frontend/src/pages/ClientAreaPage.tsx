@@ -219,6 +219,7 @@ const BOLTZ_STEPS: { key: string; label: string }[] = [
   { key: "awaiting_deposit", label: "Aguardando depósito" },
   { key: "deposit_detected", label: "Depósito detectado" },
   { key: "provider_processing", label: "Processando Lightning" },
+  { key: "provider_claim_pending", label: "Claim pendente na Boltz" },
   { key: "paid_out", label: "Invoice paga" },
 ];
 
@@ -648,6 +649,9 @@ export function ClientAreaPage() {
   const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
   const boltzPreimage = boltzOrder?.preimage ?? null;
   const boltzAwaitingUserDeposit = boltzStatus === "awaiting_deposit";
+  const boltzClaimPending =
+    boltzStatus === "provider_claim_pending" ||
+    boltzOrder?.status_raw === "transaction.claim.pending";
   const boltzStepIndex = BOLTZ_STEPS.findIndex((s) => s.key === boltzStatus);
   const bitrefillStepIndex = BITREFILL_STEPS.findIndex(
     (s) => s.key === String(order?.status ?? created?.status ?? ""),
@@ -1197,7 +1201,10 @@ export function ClientAreaPage() {
               )}
 
               {/* Endereço de depósito — mostrar enquanto aguardando */}
-              {clientDepositAddress && boltzStatus !== "paid_out" && boltzStatus !== "error" && (
+              {clientDepositAddress &&
+                boltzStatus !== "paid_out" &&
+                boltzStatus !== "error" &&
+                !boltzClaimPending && (
                 <>
                   <div className="client-inline-copy">
                     <p>
@@ -1278,6 +1285,14 @@ export function ClientAreaPage() {
               <p className="panel-hint">
                 Status Boltz: <code>{boltzOrder?.status_raw ?? "—"}</code>
               </p>
+
+              {boltzClaimPending && (
+                <p className="panel-hint">
+                  Invoice já foi paga. A Boltz está em <code>transaction.claim.pending</code>, aguardando
+                  assinatura cooperativa (key-path) ou claim via script-path. O status final de sucesso é{" "}
+                  <code>transaction.claimed</code>.
+                </p>
+              )}
 
               {boltzStatus === "paid_out" ? (
                 <div className="client-success-box">

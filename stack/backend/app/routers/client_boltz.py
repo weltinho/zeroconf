@@ -10,6 +10,7 @@ Estados locais Boltz (mapeamento de status_raw -> status em swap_orders):
   - awaiting_deposit      : swap criado, aguardando depósito on-chain
   - deposit_detected      : Boltz detectou transação no mempool/bloco
   - provider_processing   : Boltz está processando o pagamento Lightning
+  - provider_claim_pending: invoice já paga; aguardando claim final da Boltz
   - paid_out              : pagamento Lightning confirmado
   - error                 : estado terminal de falha (qualquer lado)
 """
@@ -74,8 +75,8 @@ _BOLTZ_STATUS_MAP: dict[str, str] = {
     "invoice.pending": "provider_processing",
     # Pagamento Lightning confirmado.
     "invoice.settled": "paid_out",
-    # Nesta fase a invoice Lightning já foi paga; falta só claim interno/cooperativo da Boltz.
-    "transaction.claim.pending": "paid_out",
+    # Invoice já paga; Boltz aguarda cooperação para key-path ou fará script-path depois.
+    "transaction.claim.pending": "provider_claim_pending",
     "transaction.claimed": "paid_out",
     # Estados de falha.
     "invoice.expired": "error",
@@ -465,6 +466,27 @@ async def get_boltz_order(
         select(SwapOrderBoltz).where(SwapOrderBoltz.swap_order_id == order.id)
     )
     boltz = result_boltz.scalar_one_or_none()
+
+    # Fallback defensivo: se o status_raw ainda estiver nulo, consulta a Boltz on-demand.
+    # Isso cobre casos legados em que o poller não conseguiu persistir atualização.
+    if (
+        boltz
+        and not boltz.status_raw
+        and order.provider_id
+        and not is_signet_demo_boltz_swap_id(order.provider_id)
+    ):
+        try:
+            status_data = await get_swap_status(order.provider_id)
+            status_raw = str(status_data.get("status") or "") or None
+            if status_raw:
+                boltz.status_raw = status_raw
+                boltz.last_payload_json = json.dumps(status_data, ensure_ascii=True, separators=(",", ":"))
+                mapped_status = boltz_status_to_local(status_raw)
+                if order.status != mapped_status:
+                    order.status = mapped_status
+                await session.commit()
+        except Exception as exc:
+            logger.warning("Boltz fallback status fetch failed for order %d: %s", order.id, exc)
 
     # Extrai lockup_tx_id e preimage do payload mais recente da Boltz.
     lockup_tx_id: str | None = None

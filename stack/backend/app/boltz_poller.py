@@ -20,6 +20,7 @@ from app.models import SwapOrder, SwapOrderBoltz
 from app.routers.client_boltz import boltz_status_to_local
 from app.settings import settings
 from app.signet_demo import is_signet_demo_boltz_swap_id
+from app.swap_logs import log_swap_step
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +35,9 @@ _STATUS_RANK: dict[str, int] = {
     "awaiting_deposit": 0,
     "deposit_detected": 1,
     "provider_processing": 2,
-    "paid_out": 3,
-    "error": 3,
+    "provider_claim_pending": 3,
+    "paid_out": 4,
+    "error": 4,
 }
 
 
