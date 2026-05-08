@@ -7,6 +7,7 @@ import { getUiText } from "../i18n";
 import { Combobox, type ComboboxOption, getCountryFlag, getCategoryIcon } from "../components/Combobox";
 import { ProgressSteps } from "../components/ProgressSteps";
 import { DropdownMenu } from "../components/DropdownMenu";
+import { USE_MOCKS, MOCK_COUNTRIES, MOCK_CATEGORIES, getMockProducts } from "../mocks/catalogMocks";
 
 type CreateOrderResponse = {
   order_id: number;
@@ -264,11 +265,15 @@ export function ClientAreaPage() {
 
   const [comprasCategorySlug, setComprasCategorySlug] = useState("");
   const [comprasCountryCode, setComprasCountryCode] = useState("BR");
-  const [comprasCountries, setComprasCountries] = useState<CatalogCountryOpt[]>([
-    { code: "BR", name: "Brasil" },
-  ]);
-  const [comprasCategories, setComprasCategories] = useState<CatalogCategoryOpt[]>([]);
-  const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
+const [comprasCountries, setComprasCountries] = useState<CatalogCountryOpt[]>(
+  USE_MOCKS ? MOCK_COUNTRIES : [{ code: "BR", name: "Brasil" }]
+);
+const [comprasCategories, setComprasCategories] = useState<CatalogCategoryOpt[]>(
+  USE_MOCKS ? MOCK_CATEGORIES : []
+);
+const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
+  USE_MOCKS ? getMockProducts("", "BR") : []
+);
   const [comprasProductId, setComprasProductId] = useState("");
   const [comprasPackageId, setComprasPackageId] = useState("");
   const [comprasEmail, setComprasEmail] = useState("");
@@ -407,6 +412,20 @@ export function ClientAreaPage() {
 
   useEffect(() => {
     if (mode !== "compras") return;
+    
+    // Use mocks when enabled (for development without backend)
+    if (USE_MOCKS) {
+      setBitrefillLoading(true);
+      // Simulate a small delay for realism
+      const timeout = setTimeout(() => {
+        setComprasCountries(MOCK_COUNTRIES);
+        setComprasCategories(MOCK_CATEGORIES);
+        setComprasProducts(getMockProducts(comprasCategorySlug, comprasCountryCode));
+        setBitrefillLoading(false);
+      }, 300);
+      return () => clearTimeout(timeout);
+    }
+
     let cancelled = false;
     setBitrefillLoading(true);
     setBitrefillError(null);
