@@ -63,8 +63,8 @@ export function CryptoBackground() {
     }
 
     function draw() {
-      // Limpa quase completamente - rastro mínimo
-      ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+      // Limpa com tom verde-escuro sutil para combinar com o fundo
+      ctx.fillStyle = "rgba(5, 10, 10, 0.88)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
@@ -82,14 +82,15 @@ export function CryptoBackground() {
           const fade = 1 - i / col.chars.length;
           
           if (i === 0) {
+            // Caractere principal - brilhante mas não exagerado
             if (isCrypto) {
-              ctx.fillStyle = char === "₿" ? "#ff9500" : "#ffdd00";
-              ctx.shadowColor = char === "₿" ? "#ff9500" : "#ffdd00";
-              ctx.shadowBlur = 20;
+              ctx.fillStyle = char === "₿" ? "#f7931a" : "#fbbf24";
+              ctx.shadowColor = char === "₿" ? "#f7931a" : "#fbbf24";
+              ctx.shadowBlur = 10;
             } else {
-              ctx.fillStyle = "#00ff00";
-              ctx.shadowColor = "#00ff00";
-              ctx.shadowBlur = 15;
+              ctx.fillStyle = "#22c55e";
+              ctx.shadowColor = "#22c55e";
+              ctx.shadowBlur = 8;
             }
           } else {
             if (isCrypto) {

@@ -7,10 +7,10 @@
   color-scheme: dark;
 
   /* Core Palette — Professional Dark Fintech */
-  --background: #000000;
-  --background-elevated: #080808;
-  --background-card: #0d0d0d;
-  --background-hover: #151515;
+  --background: #050a0a;
+  --background-elevated: #0a1414;
+  --background-card: rgba(10, 20, 20, 0.85);
+  --background-hover: #142020;
 
   /* Accent — Emerald Trust (verde sofisticado, não neon) */
   --accent: #10b981;
@@ -252,7 +252,9 @@ body {
   padding: 2.5rem 2rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: linear-gradient(135deg, var(--background-card) 0%, var(--background-elevated) 100%);
+  background: linear-gradient(135deg, rgba(10, 20, 20, 0.9) 0%, rgba(15, 25, 25, 0.95) 100%);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   position: relative;
   overflow: hidden;
 }
@@ -352,7 +354,9 @@ body {
   padding: 1.5rem;
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
-  background: var(--background-card);
+  background: rgba(10, 20, 20, 0.88);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   text-decoration: none;
   color: inherit;
   transition: all 0.2s ease;
