@@ -7,10 +7,10 @@
   color-scheme: dark;
 
   /* Core Palette — Professional Dark Fintech */
-  --background: #0d1a1a;
-  --background-elevated: #122222;
-  --background-card: #152828;
-  --background-hover: #1a3333;
+  --background: #000000;
+  --background-elevated: #080808;
+  --background-card: #0d0d0d;
+  --background-hover: #151515;
 
   /* Accent — Emerald Trust (verde sofisticado, não neon) */
   --accent: #10b981;
@@ -125,14 +125,14 @@ body {
   gap: 0.75rem 1.5rem;
   padding: 0.875rem 1.5rem;
   border-bottom: 1px solid var(--border);
-  background: rgba(10, 15, 20, 0.85);
+  background: rgba(0, 0, 0, 0.7);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   flex-shrink: 0;
 }
 
 .matrix-header-adm {
-  background: rgba(15, 20, 25, 0.9);
+  background: rgba(0, 0, 0, 0.85);
   border-bottom-color: var(--border-accent);
 }
 
