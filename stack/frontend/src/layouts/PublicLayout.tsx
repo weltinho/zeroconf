@@ -14,7 +14,6 @@ export function PublicLayout() {
         logoAria={t.logoAriaLabel}
         matrixNavFlux={t.matrixNavFlux}
         matrixNavInfo={t.matrixNavInfo}
-        matrixNavAdm={t.matrixNavAdm}
       />
       <Outlet />
     </MatrixShell>

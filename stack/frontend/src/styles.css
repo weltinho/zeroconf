@@ -1157,6 +1157,8 @@ pre {
 
 .client-order-card {
   justify-content: flex-start;
+  max-height: none;
+  overflow: visible;
 }
 
 .client-order-card-content {

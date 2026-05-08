@@ -5,8 +5,6 @@ import { AdmFundsRescuePage } from "./pages/adm/AdmFundsRescuePage";
 import { AdmHomePage } from "./pages/adm/AdmHomePage";
 import { AdmSwapsPage } from "./pages/adm/AdmSwapsPage";
 import { ClientAreaPage } from "./pages/ClientAreaPage";
-import { ClientComingSoonPage } from "./pages/ClientComingSoonPage";
-import { HomePage } from "./pages/HomePage";
 import { NodeToolsPage } from "./pages/NodeToolsPage";
 
 function routerBasename(): string | undefined {
@@ -22,9 +20,9 @@ export default function App() {
     <BrowserRouter basename={routerBasename()}>
       <Routes>
         <Route element={<PublicLayout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/cliente" element={<ClientComingSoonPage />} />
-          <Route path="/cliente/:orderId" element={<ClientComingSoonPage />} />
+          <Route path="/" element={<ClientAreaPage />} />
+          <Route path="/cliente" element={<ClientAreaPage />} />
+          <Route path="/cliente/:orderId" element={<ClientAreaPage />} />
           <Route path="/cliente-homologacao" element={<ClientAreaPage />} />
           <Route path="/cliente-homologacao/:orderId" element={<ClientAreaPage />} />
         </Route>

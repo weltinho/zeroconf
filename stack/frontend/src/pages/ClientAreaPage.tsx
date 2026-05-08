@@ -716,15 +716,15 @@ export function ClientAreaPage() {
         <span className="page-nav-sep" aria-hidden="true">
           /
         </span>
-        <span className="page-nav-current">cliente-homologacao</span>
+        <span className="page-nav-current">cliente</span>
       </nav>
 
       <header className="hero">
         <div className="hero-brand">
           <AppLogo className="hero-logo" variant="matrix" aria-label={t.logoAriaLabel} />
           <div className="hero-copy">
-            <h1>cliente-homologacao</h1>
-            <p>Crie uma ordem: depósito → envio automático</p>
+            <h1>cliente</h1>
+            <p>Selecione uma opção e realize seu depósito pra concluir a operação</p>
           </div>
         </div>
         <div className="badges">

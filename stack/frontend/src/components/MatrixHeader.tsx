@@ -7,7 +7,6 @@ type Props =
       logoAria: string;
       matrixNavFlux: string;
       matrixNavInfo: string;
-      matrixNavAdm: string;
     }
   | {
       variant: "adm";
@@ -31,9 +30,6 @@ export function MatrixHeader(props: Props) {
         <nav className="matrix-header-nav" aria-label="Main">
           <span className="matrix-nav-muted">{props.matrixNavFlux}</span>
           <span className="matrix-nav-muted">{props.matrixNavInfo}</span>
-          <Link to="/adm" className="matrix-nav-link matrix-nav-link-accent">
-            {props.matrixNavAdm}
-          </Link>
         </nav>
       </header>
     );
