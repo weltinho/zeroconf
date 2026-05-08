@@ -13,7 +13,8 @@ export function MatrixRain() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const matrixChars = "01";
+    // Katakana + números estilo Matrix original
+    const matrixChars = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン01";
     const cryptoChars = "₿⚡";
     const fontSize = 20;
     const columnSpacing = 60;
