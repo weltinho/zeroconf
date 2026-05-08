@@ -10,7 +10,6 @@ Estados locais Boltz (mapeamento de status_raw -> status em swap_orders):
   - awaiting_deposit      : swap criado, aguardando depósito on-chain
   - deposit_detected      : Boltz detectou transação no mempool/bloco
   - provider_processing   : Boltz está processando o pagamento Lightning
-  - provider_claim_pending: invoice já paga; aguardando claim final da Boltz
   - paid_out              : pagamento Lightning confirmado
   - error                 : estado terminal de falha (qualquer lado)
 """
@@ -75,8 +74,8 @@ _BOLTZ_STATUS_MAP: dict[str, str] = {
     "invoice.pending": "provider_processing",
     # Pagamento Lightning confirmado.
     "invoice.settled": "paid_out",
-    # Invoice já paga; Boltz aguarda cooperação para key-path ou fará script-path depois.
-    "transaction.claim.pending": "provider_claim_pending",
+    # Invoice já paga; para o cliente consideramos sucesso/finalizado.
+    "transaction.claim.pending": "paid_out",
     "transaction.claimed": "paid_out",
     # Estados de falha.
     "invoice.expired": "error",

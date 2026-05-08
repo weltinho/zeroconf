@@ -224,7 +224,6 @@ const BOLTZ_STEPS: { key: string; label: string }[] = [
   { key: "awaiting_deposit", label: "Aguardando depósito" },
   { key: "deposit_detected", label: "Depósito detectado" },
   { key: "provider_processing", label: "Processando Lightning" },
-  { key: "provider_claim_pending", label: "Claim pendente na Boltz" },
   { key: "paid_out", label: "Invoice paga" },
 ];
 
@@ -675,9 +674,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
   const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
   const boltzPreimage = boltzOrder?.preimage ?? null;
   const boltzAwaitingUserDeposit = boltzStatus === "awaiting_deposit";
-  const boltzClaimPending =
-    boltzStatus === "provider_claim_pending" ||
-    boltzOrder?.status_raw === "transaction.claim.pending";
+  const boltzClaimPendingRaw = boltzOrder?.status_raw === "transaction.claim.pending";
   const boltzStepIndex = BOLTZ_STEPS.findIndex((s) => s.key === boltzStatus);
   const bitrefillStepIndex = BITREFILL_STEPS.findIndex(
     (s) => s.key === String(order?.status ?? created?.status ?? ""),
@@ -1435,11 +1432,10 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
                 Status Boltz: <code>{boltzOrder?.status_raw ?? "—"}</code>
               </p>
 
-              {boltzClaimPending && (
+              {boltzClaimPendingRaw && (
                 <p className="panel-hint">
-                  Invoice já foi paga. A Boltz está em <code>transaction.claim.pending</code>, aguardando
-                  assinatura cooperativa (key-path) ou claim via script-path. O status final de sucesso é{" "}
-                  <code>transaction.claimed</code>.
+                  Parabéns, sucesso! Sua troca já foi concluída. Verifique sua carteira Lightning. O estado{" "}
+                  <code>transaction.claim.pending</code> é apenas técnico intermediário da Boltz.
                 </p>
               )}
 
@@ -1463,7 +1459,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
                   {boltzPreimage && (
                     <>
                       <p style={{ fontSize: "0.75rem", margin: "0.5rem 0 0.2rem", color: "var(--mx-muted)" }}>
-                        Prova de pagamento (preimage):
+                        Pre image:
                       </p>
                       <div className="client-inline-copy" style={{ alignItems: "flex-start" }}>
                         <code style={{ fontSize: "0.67rem", wordBreak: "break-all", flex: 1 }}>
@@ -1480,6 +1476,11 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
                       </div>
                     </>
                   )}
+                  {!boltzPreimage ? (
+                    <p className="panel-hint" style={{ margin: 0 }}>
+                      Pre image: aguardando pre image
+                    </p>
+                  ) : null}
                 </div>
               ) : boltzStatus === "error" ? (
                 <div className="client-success-box">

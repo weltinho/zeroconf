@@ -35,7 +35,6 @@ _STATUS_RANK: dict[str, int] = {
     "awaiting_deposit": 0,
     "deposit_detected": 1,
     "provider_processing": 2,
-    "provider_claim_pending": 3,
     "paid_out": 4,
     "error": 4,
 }
