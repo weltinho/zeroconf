@@ -40,8 +40,18 @@ function ErrorIcon() {
   );
 }
 
-function CelebrationIcon() {
-  return <span style={{ fontSize: "1rem", lineHeight: 1 }}>🎉</span>;
+function SuccessIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+      <path
+        d="M2 7L5.5 10.5L12 3"
+        stroke="currentColor"
+        strokeWidth="2.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
 }
 
 export function ProgressSteps({ steps, currentStepKey, isError = false }: ProgressStepsProps) {
@@ -89,7 +99,7 @@ export function ProgressSteps({ steps, currentStepKey, isError = false }: Progre
               ) : isCurrent && isError ? (
                 <ErrorIcon />
               ) : isCurrent && isFinalSuccess ? (
-                <CelebrationIcon />
+                <SuccessIcon />
               ) : isCurrent ? (
                 <LoadingIcon />
               ) : (
