@@ -1150,6 +1150,11 @@ pre {
   min-height: 0;
 }
 
+.client-create-order-panel {
+  max-height: none;
+  overflow: visible;
+}
+
 .client-order-card {
   justify-content: flex-start;
 }

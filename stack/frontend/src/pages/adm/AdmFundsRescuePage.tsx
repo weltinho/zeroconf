@@ -1,5 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { apiUrl } from "../../api/url";
+import { formatDateTimeSaoPaulo } from "../../utils/datetime";
 
 type StuckItem = {
   order_id: number;
@@ -223,7 +224,7 @@ export function AdmFundsRescuePage() {
                       <br />
                       <span className="panel-hint">{satsToBtc(it.actual_deposit_sats)} BTC</span>
                     </td>
-                    <td>{new Date(it.created_at).toLocaleString("pt-BR")}</td>
+                    <td>{formatDateTimeSaoPaulo(it.created_at)}</td>
                     <td>
                       {it.mempool_deposit_url ? (
                         <a href={it.mempool_deposit_url} target="_blank" rel="noreferrer">
@@ -290,7 +291,7 @@ export function AdmFundsRescuePage() {
               ) : (
                 history.map((h) => (
                   <tr key={h.rescue_id}>
-                    <td>{new Date(h.created_at).toLocaleString("pt-BR")}</td>
+                    <td>{formatDateTimeSaoPaulo(h.created_at)}</td>
                     <td>#{h.order_id}</td>
                     <td>{h.mode === "origin" ? "Devolução origem" : "Encaminhado"}</td>
                     <td>

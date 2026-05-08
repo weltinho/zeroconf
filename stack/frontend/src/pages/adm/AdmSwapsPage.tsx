@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiUrl } from "../../api/url";
+import { formatDateTimeSaoPauloCompact } from "../../utils/datetime";
 
 type OrderRow = {
   order_id: number;
@@ -31,17 +32,6 @@ type ClientNetworkResponse = {
 
 function satsToBtc(sats: number): string {
   return (sats / 100_000_000).toFixed(8);
-}
-
-function formatDateBrCompact(value: string): string {
-  const m = value.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})/
-  );
-  if (!m) {
-    return value;
-  }
-  const [, , mm, dd, hh, mi, ss] = m;
-  return `${dd}/${mm} ${hh}:${mi}:${ss}`;
 }
 
 function mempoolBase(chain: string): string {
@@ -236,7 +226,7 @@ export function AdmSwapsPage() {
                       <td>{o.status}</td>
                       <td>{satsToBtc(o.output_sats)}</td>
                       <td>{satsToBtc(o.required_deposit_sats)}</td>
-                      <td>{formatDateBrCompact(o.created_at)}</td>
+                      <td>{formatDateTimeSaoPauloCompact(o.created_at)}</td>
                       <td title={o.deposit_txid || ""}>
                         {o.deposit_txid ? (
                           <a

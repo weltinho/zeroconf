@@ -760,7 +760,7 @@ export function ClientAreaPage() {
 
       <div className="workspace client-hml-workspace">
         <div className="client-hml-left">
-          <section className="panel panel-rpc">
+          <section className="panel panel-rpc client-create-order-panel">
             <h2>Criar ordem</h2>
 
             <div
