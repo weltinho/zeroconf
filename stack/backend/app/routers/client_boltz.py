@@ -74,7 +74,8 @@ _BOLTZ_STATUS_MAP: dict[str, str] = {
     "invoice.pending": "provider_processing",
     # Pagamento Lightning confirmado.
     "invoice.settled": "paid_out",
-    "transaction.claim.pending": "provider_processing",
+    # Nesta fase a invoice Lightning já foi paga; falta só claim interno/cooperativo da Boltz.
+    "transaction.claim.pending": "paid_out",
     "transaction.claimed": "paid_out",
     # Estados de falha.
     "invoice.expired": "error",
