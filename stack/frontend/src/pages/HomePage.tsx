@@ -140,21 +140,7 @@ export function HomePage() {
               Iniciar Troca
             </button>
 
-            {/* Trust Indicators */}
-            <div className="swap-trust">
-              <div className="swap-trust-item">
-                <span className="swap-trust-dot" />
-                <span>Auto-custódia</span>
-              </div>
-              <div className="swap-trust-item">
-                <span className="swap-trust-dot" />
-                <span>Zero confirmações</span>
-              </div>
-              <div className="swap-trust-item">
-                <span className="swap-trust-dot" />
-                <span>Auditável</span>
-              </div>
-            </div>
+
           </div>
         </main>
 
@@ -452,31 +438,6 @@ export function HomePage() {
           background: var(--accent-dim);
           transform: translateY(-1px);
           box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
-        }
-
-        /* Trust Indicators */
-        .swap-trust {
-          display: flex;
-          justify-content: center;
-          flex-wrap: wrap;
-          gap: 1rem 1.5rem;
-          margin-top: 1.25rem;
-          padding-top: 1rem;
-        }
-
-        .swap-trust-item {
-          display: flex;
-          align-items: center;
-          gap: 0.375rem;
-          font-size: 0.75rem;
-          color: var(--text-muted);
-        }
-
-        .swap-trust-dot {
-          width: 6px;
-          height: 6px;
-          background: var(--accent);
-          border-radius: 50%;
         }
 
         /* Footer */
