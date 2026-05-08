@@ -408,7 +408,8 @@ async def run_signet_bitrefill_demo_progression(order_id: int, _deposit_txid: st
         if order is None or order.status in {"paid_out", "error"}:
             return
         order.status = "provider_processing"
-        order.last_error = "signet.demo: invoice / payout simulados"
+        # Caminho de sucesso da simulação: não marcar erro para não poluir a UI.
+        order.last_error = None
         await log_swap_step(session, order_id, "signet.demo.progress", "mock: provider_processing", {})
         await session.commit()
 
@@ -434,7 +435,8 @@ async def run_signet_bitrefill_demo_progression(order_id: int, _deposit_txid: st
             return
         order.status = "confirming"
         order.payout_txid = demo_txid(f"signet-br-payout-{order_id}")
-        order.last_error = "signet.demo: payout simulado — aguardando confirmação"
+        # Ainda é fluxo bem-sucedido; manter sem erro.
+        order.last_error = None
         await log_swap_step(session, order_id, "signet.demo.progress", "mock: confirming", {})
         await session.commit()
 

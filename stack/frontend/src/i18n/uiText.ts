@@ -33,6 +33,7 @@ export type UiText = {
   admNavNode: string;
   admNavSwaps: string;
   admNavFundsRescue: string;
+  admNavWithdraw: string;
   admNavPublic: string;
   admLogout: string;
   nodeToolsNav: string;
@@ -119,6 +120,7 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     admNavNode: "NODE",
     admNavSwaps: "TROCAS",
     admNavFundsRescue: "FUNDS",
+    admNavWithdraw: "LUCRO",
     admNavPublic: "Public site",
     admLogout: "LOCK_SESSION",
     nodeToolsNav: "NODE",
@@ -208,6 +210,7 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     admNavNode: "NODE",
     admNavSwaps: "TROCAS",
     admNavFundsRescue: "FUNDOS",
+    admNavWithdraw: "LUCRO",
     admNavPublic: "Site público",
     admLogout: "BLOQUEAR_SESSÃO",
     nodeToolsNav: "NODE",

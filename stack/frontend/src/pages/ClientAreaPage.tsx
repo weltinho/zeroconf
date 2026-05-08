@@ -9,8 +9,6 @@ import { DropdownMenu } from "../components/DropdownMenu";
 import { CopyToastContainer, useCopyWithToast } from "../components/CopyToast";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { PulsingQRCode } from "../components/PulsingQRCode";
-import { USE_MOCKS, MOCK_COUNTRIES, MOCK_CATEGORIES, getMockProducts } from "../mocks/catalogMocks";
-import { USE_ORDER_MOCKS, useMockOrders } from "../mocks/orderMocks";
 
 type CreateOrderResponse = {
   order_id: number;
@@ -267,26 +265,11 @@ export function ClientAreaPage() {
   const [boltzOrder, setBoltzOrder] = useState<GetBoltzOrderResponse | null>(null);
   const [boltzFees, setBoltzFees] = useState<BoltzFees | null>(null);
 
-  // Mock orders hook - simula progressão de estados sem backend
-  const {
-    bitrefillOrder: mockBitrefillOrder,
-    boltzOrder: mockBoltzOrder,
-    createBitrefillOrder: createMockBitrefillOrder,
-    createBoltzOrder: createMockBoltzOrder,
-    reset: resetMockOrders,
-  } = useMockOrders();
-
   const [comprasCategorySlug, setComprasCategorySlug] = useState("");
   const [comprasCountryCode, setComprasCountryCode] = useState("BR");
-const [comprasCountries, setComprasCountries] = useState<CatalogCountryOpt[]>(
-  USE_MOCKS ? MOCK_COUNTRIES : [{ code: "BR", name: "Brasil" }]
-);
-const [comprasCategories, setComprasCategories] = useState<CatalogCategoryOpt[]>(
-  USE_MOCKS ? MOCK_CATEGORIES : []
-);
-const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
-  USE_MOCKS ? getMockProducts("", "BR") : []
-);
+const [comprasCountries, setComprasCountries] = useState<CatalogCountryOpt[]>([{ code: "BR", name: "Brasil" }]);
+const [comprasCategories, setComprasCategories] = useState<CatalogCategoryOpt[]>([]);
+const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
   const [comprasProductId, setComprasProductId] = useState("");
   const [comprasPackageId, setComprasPackageId] = useState("");
   const [comprasEmail, setComprasEmail] = useState("");
@@ -426,19 +409,6 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
   useEffect(() => {
     if (mode !== "compras") return;
     
-    // Use mocks when enabled (for development without backend)
-    if (USE_MOCKS) {
-      setBitrefillLoading(true);
-      // Simulate a small delay for realism
-      const timeout = setTimeout(() => {
-        setComprasCountries(MOCK_COUNTRIES);
-        setComprasCategories(MOCK_CATEGORIES);
-        setComprasProducts(getMockProducts(comprasCategorySlug, comprasCountryCode));
-        setBitrefillLoading(false);
-      }, 300);
-      return () => clearTimeout(timeout);
-    }
-
     let cancelled = false;
     setBitrefillLoading(true);
     setBitrefillError(null);
@@ -549,12 +519,8 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     pollCounterRef.current = {};
     initialOrderLoadedRef.current = false;
     setMode("onchain");
-    // Reset mock orders também
-    if (USE_ORDER_MOCKS) {
-      resetMockOrders();
-    }
     void navigate("/cliente", { replace: true });
-  }, [navigate, stopPolling, resetMockOrders]);
+  }, [navigate, stopPolling]);
 
   async function onCreateBoltz(e: FormEvent) {
     e.preventDefault();
@@ -563,13 +529,6 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     setBoltzCreated(null);
     setBoltzOrder(null);
     setCreating(true);
-    
-    // Usa mock quando ativado
-    if (USE_ORDER_MOCKS) {
-      createMockBoltzOrder(invoice.trim());
-      setCreating(false);
-      return;
-    }
     
     try {
       const body = { invoice: invoice.trim() };
@@ -640,15 +599,6 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     setBoltzOrder(null);
     setComprasSubmitting(true);
     
-    // Usa mock quando ativado
-    if (USE_ORDER_MOCKS) {
-      const productName = comprasSelectedProduct?.name || "Produto";
-      const packageValue = comprasSelectedPackage?.value?.toString() || "100";
-      createMockBitrefillOrder(productName, packageValue);
-      setComprasSubmitting(false);
-      return;
-    }
-    
     try {
       const r = await fetch(apiUrl("/client/bitrefill/orders"), {
         method: "POST",
@@ -688,15 +638,9 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
 
   const orderId = created?.order_id ?? order?.order_id ?? null;
   
-  // Usa mocks quando ativados, senão usa dados reais
-  const liveOrder = USE_ORDER_MOCKS && mockBitrefillOrder 
-    ? mockBitrefillOrder as unknown as (GetOrderResponse | CreateOrderResponse)
-    : (order ?? created);
-  const liveBoltz = USE_ORDER_MOCKS && mockBoltzOrder
-    ? mockBoltzOrder as unknown as (GetBoltzOrderResponse | CreateBoltzOrderResponse)
-    : (boltzOrder ?? boltzCreated);
-  
-  const activeOrderId = orderId ?? liveBoltz?.order_id ?? (USE_ORDER_MOCKS ? (mockBitrefillOrder?.order_id ?? mockBoltzOrder?.order_id ?? null) : null);
+  const liveOrder = order ?? created;
+  const liveBoltz = boltzOrder ?? boltzCreated;
+  const activeOrderId = orderId ?? liveBoltz?.order_id ?? null;
   const formLocked = activeOrderId !== null;
   const requiredBtc = liveOrder ? satsToBtc(liveOrder.required_deposit_sats) : null;
   const outputBtc = liveOrder ? satsToBtc(liveOrder.output_sats) : null;
@@ -709,7 +653,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
       : null;
 
   const isBitrefillOrder =
-    (order?.provider ?? created?.provider) === "bitrefill" || (USE_ORDER_MOCKS && mockBitrefillOrder !== null);
+    (order?.provider ?? created?.provider) === "bitrefill";
   const orderAwaitingUserDeposit =
     liveOrder &&
     (liveOrder.status === "awaiting_deposit" || liveOrder.status === "created");
@@ -718,23 +662,18 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     !orderAwaitingUserDeposit &&
     liveOrder.status !== "error";
 
-  // Usa status do mock quando disponível
-  const boltzStatus = USE_ORDER_MOCKS && mockBoltzOrder 
-    ? mockBoltzOrder.status 
-    : (boltzOrder?.status ?? boltzCreated?.status ?? null);
+  const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
   const clientDepositAddress =
-    (USE_ORDER_MOCKS && mockBoltzOrder?.deposit_btc_address) ||
-    (boltzCreated?.deposit_btc_address ??
+    boltzCreated?.deposit_btc_address ??
     boltzOrder?.deposit_btc_address ??
     boltzOrder?.our_deposit_address ??
-    null);
-  const boltzExpectedSat = (USE_ORDER_MOCKS && mockBoltzOrder?.required_deposit_sats) || (boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null);
+    null;
+  const boltzExpectedSat = boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null;
   const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
-  // Usa txIds do mock quando disponíveis
-  const boltzLockupTxId = (USE_ORDER_MOCKS && mockBoltzOrder?.lockup_tx_id) || (boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null);
-  const boltzDepositTxId = (USE_ORDER_MOCKS && mockBoltzOrder?.deposit_tx_id) || (boltzOrder?.deposit_tx_id ?? null);  // tx do cliente → nossa wallet
-  const boltzPreimage = (USE_ORDER_MOCKS && mockBoltzOrder?.preimage) || (boltzOrder?.preimage ?? null);
+  const boltzLockupTxId = boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null;
+  const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
+  const boltzPreimage = boltzOrder?.preimage ?? null;
   const boltzAwaitingUserDeposit = boltzStatus === "awaiting_deposit";
   const boltzClaimPending =
     boltzStatus === "provider_claim_pending" ||
@@ -1286,48 +1225,53 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
             )}
           </section>
 
-          <section className="panel panel-rpc">
-            <h2>Status técnico (raw)</h2>
-            {!orderId && !liveBoltz && mode !== "compras" ? (
-              <p className="panel-hint">Crie uma ordem para ver o endereço de depósito.</p>
-            ) : mode === "compras" ? (
-              <pre className="panel-pre rpc-response-pre">
-                {JSON.stringify(
-                  {
-                    seleção: {
-                      país: comprasCountryCode,
-                      categoria: comprasCategorySlug,
-                      produto_id: comprasProductId || null,
-                      pacote_id: comprasPackageId || null,
-                      produto: comprasSelectedProduct,
-                      email: comprasEmail || null,
-                      telefone: comprasNeedsPhone ? comprasPhone || null : undefined,
+          {chain === "signet" ? (
+            <section className="panel panel-rpc">
+              <h2>Status técnico (raw)</h2>
+              {!orderId && !liveBoltz && mode !== "compras" ? (
+                <p className="panel-hint">Crie uma ordem para ver o endereço de depósito.</p>
+              ) : mode === "compras" ? (
+                <pre className="panel-pre rpc-response-pre">
+                  {JSON.stringify(
+                    {
+                      ordem_node: orderId
+                        ? {
+                            order_id: orderId,
+                            provider: order?.provider ?? created?.provider ?? null,
+                            status: order?.status ?? created?.status ?? null,
+                            deposit_btc_address: order?.deposit_btc_address ?? created?.deposit_btc_address ?? null,
+                            required_deposit_sats: order?.required_deposit_sats ?? created?.required_deposit_sats ?? null,
+                            output_sats: order?.output_sats ?? created?.output_sats ?? null,
+                            payout_txid: order?.payout_txid ?? null,
+                            deposit_txid_detected: depositTxid ?? null,
+                            last_rpc_status: order?.last_rpc_status ?? null,
+                            bitrefill_gift_card_line: order?.bitrefill_gift_card_line ?? null,
+                          }
+                        : null,
+                      seleção_resumo: {
+                        país: comprasCountryCode,
+                        categoria: comprasCategorySlug,
+                        produto_id: comprasProductId || null,
+                        pacote_id: comprasPackageId || null,
+                      },
                     },
-                    catálogo_carregado: comprasProducts.length,
-                    ordem_loja: orderId
-                      ? {
-                          order_id: orderId,
-                          provider: order?.provider ?? created?.provider ?? null,
-                          status: order?.status ?? created?.status ?? null,
-                        }
-                      : null,
-                  },
-                  null,
-                  2,
-                )}
-              </pre>
-            ) : (
-              <pre className="panel-pre rpc-response-pre">
-                {liveBoltz
-                  ? JSON.stringify(liveBoltz, null, 2)
-                  : order
-                  ? JSON.stringify(order, null, 2)
-                  : created
-                  ? JSON.stringify(created, null, 2)
-                  : "…"}
-              </pre>
-            )}
-          </section>
+                    null,
+                    2,
+                  )}
+                </pre>
+              ) : (
+                <pre className="panel-pre rpc-response-pre">
+                  {liveBoltz
+                    ? JSON.stringify(liveBoltz, null, 2)
+                    : order
+                    ? JSON.stringify(order, null, 2)
+                    : created
+                    ? JSON.stringify(created, null, 2)
+                    : "…"}
+                </pre>
+              )}
+            </section>
+          ) : null}
         </div>
 
         <section className="panel panel-rpc client-order-card">
@@ -1628,8 +1572,8 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                 <PulsingQRCode 
                   value={liveOrder.deposit_btc_address} 
                   size={160} 
-                  isWaiting={orderAwaitingUserDeposit}
-                  isDetected={orderDepositSeenByBackend}
+                  isWaiting={!!orderAwaitingUserDeposit}
+                  isDetected={!!orderDepositSeenByBackend}
                 />
               </div>
               {isBitrefillOrder && liveOrder.bitrefill_gift_card_line ? (

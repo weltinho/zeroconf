@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
+from decimal import Decimal
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
 from app.bitcoin_rpc import BitcoinRpcError
 from app.deps import rpc
@@ -215,3 +217,252 @@ async def node_wallet(_user: dict = Depends(get_adm_user)) -> dict[str, Any]:
     out["addresses"] = addresses
     out["unspent_by_address"] = unspent_by_address
     return out
+
+
+class AdminWithdrawPreviewRequest(BaseModel):
+    master_password: str
+    destination_btc_address: str
+
+
+def _sats_to_btc_str(sats: int) -> str:
+    d = (Decimal(sats) / Decimal(100_000_000)).quantize(Decimal("0.00000001"))
+    return format(d, "f")
+
+
+async def _build_admin_withdraw_psbt(
+    *,
+    wallet: str,
+    destination: str,
+    lock_unspents: bool,
+) -> dict[str, Any]:
+    # Evita "vazamento" de lock de tentativas anteriores (preview/execute interrompidos).
+    try:
+        locked = await rpc.call("listlockunspent", [], wallet=wallet)
+        if isinstance(locked, list) and locked:
+            await rpc.call("lockunspent", [True, locked], wallet=wallet)
+    except Exception:
+        # Best effort: se falhar, seguimos com listunspent e diagnóstico abaixo.
+        pass
+
+    fee_index0 = await _ensure_fee_address_index0(wallet)
+    unspent = await rpc.call("listunspent", [0, 9999999, [], True], wallet=wallet)
+    if not isinstance(unspent, list):
+        raise HTTPException(status_code=502, detail="listunspent invalid response")
+
+    utxos: list[dict[str, Any]] = []
+    total_seen = 0
+    total_on_fee_index0 = 0
+    total_spendable_on_fee_index0 = 0
+    total_sats = 0
+    for u in unspent:
+        if not isinstance(u, Mapping):
+            continue
+        total_seen += 1
+        addr = str(u.get("address") or "").strip()
+        if addr != fee_index0:
+            continue
+        total_on_fee_index0 += 1
+        if not u.get("spendable", True):
+            continue
+        total_spendable_on_fee_index0 += 1
+        txid = str(u.get("txid") or "").strip()
+        vout = u.get("vout")
+        amount = u.get("amount")
+        if not txid or not isinstance(vout, int):
+            continue
+        try:
+            sats = int((Decimal(str(amount or 0)) * Decimal(100_000_000)).to_integral_value())
+        except Exception:
+            sats = 0
+        if sats <= 0:
+            continue
+        utxos.append({"txid": txid, "vout": vout})
+        total_sats += sats
+
+    if not utxos or total_sats <= 0:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "no spendable UTXOs available on fee-index-0 address"
+                f" (seen_all={total_seen}, on_fee_index0={total_on_fee_index0},"
+                f" spendable_on_fee_index0={total_spendable_on_fee_index0}, selected={len(utxos)})"
+            ),
+        )
+
+    send_sats = int((Decimal(total_sats) * Decimal("0.90")).to_integral_value(rounding="ROUND_DOWN"))
+    if send_sats <= 0:
+        raise HTTPException(status_code=400, detail="insufficient balance to send 90%")
+
+    options: dict[str, Any] = {
+        "replaceable": False,
+        "lockUnspents": lock_unspents,
+        "changeAddress": fee_index0,
+        "add_inputs": False,
+        "fee_rate": 3,  # sat/vB
+    }
+    outputs = {destination: _sats_to_btc_str(send_sats)}
+    funded = await rpc.call(
+        "walletcreatefundedpsbt",
+        [utxos, outputs, 0, options],
+        wallet=wallet,
+    )
+    if not isinstance(funded, dict) or not isinstance(funded.get("psbt"), str):
+        raise HTTPException(status_code=502, detail="walletcreatefundedpsbt invalid response")
+
+    fee_btc = funded.get("fee")
+    fee_sats = 0
+    try:
+        fee_sats = int((Decimal(str(fee_btc or 0)) * Decimal(100_000_000)).to_integral_value())
+    except Exception:
+        fee_sats = 0
+
+    change_sats = total_sats - send_sats - fee_sats
+    if change_sats < 0:
+        raise HTTPException(status_code=400, detail="insufficient funds after fee at 3 sat/vB")
+
+    return {
+        "psbt": funded["psbt"],
+        "fee_index0": fee_index0,
+        "utxo_count": len(utxos),
+        "total_input_sats": total_sats,
+        "send_sats": send_sats,
+        "fee_sats": fee_sats,
+        "change_sats": change_sats,
+        "selected_inputs": utxos,
+        "walletcreatefundedpsbt_response": funded,
+    }
+
+
+def _verify_master_password(raw: str) -> None:
+    expected = (settings.adm_master_withdraw_password or "").strip()
+    if not expected:
+        raise HTTPException(status_code=503, detail="adm master withdraw password not configured")
+    if raw != expected:
+        raise HTTPException(status_code=401, detail="invalid master password")
+
+
+@router.post("/admin-withdraw/preview")
+async def admin_withdraw_preview(
+    req: AdminWithdrawPreviewRequest,
+    _user: dict = Depends(get_adm_user),
+) -> dict[str, Any]:
+    rpc_step = "init"
+    try:
+        rpc_step = "verify_master_password"
+        _verify_master_password(str(req.master_password or ""))
+        rpc_step = "resolve_wallet_name"
+        wallet = _wallet_name()
+        if not wallet:
+            raise HTTPException(status_code=503, detail="operator wallet not configured")
+        rpc_step = "ensure_wallet_loaded"
+        await _ensure_wallet_loaded(wallet)
+
+        destination = str(req.destination_btc_address or "").strip()
+        if not destination:
+            raise HTTPException(status_code=422, detail="destination_btc_address is required")
+        rpc_step = "validateaddress"
+        valid = await rpc.call("validateaddress", [destination], wallet=wallet)
+        if not isinstance(valid, Mapping) or not bool(valid.get("isvalid")):
+            raise HTTPException(status_code=422, detail="invalid destination_btc_address")
+
+        rpc_step = "build_admin_withdraw_psbt"
+        built = await _build_admin_withdraw_psbt(
+            wallet=wallet,
+            destination=destination,
+            lock_unspents=False,
+        )
+        return {
+            "ok": True,
+            "destination_btc_address": destination,
+            "fee_rate_sat_vb": 3,
+            "change_address": built["fee_index0"],
+            "utxo_count": built["utxo_count"],
+            "total_input_sats": built["total_input_sats"],
+            "send_sats": built["send_sats"],
+            "fee_sats": built["fee_sats"],
+            "change_sats": built["change_sats"],
+            "rpc_debug": {
+                "validateaddress_response": valid,
+                "selected_inputs": built["selected_inputs"],
+                "walletcreatefundedpsbt_response": built["walletcreatefundedpsbt_response"],
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"admin withdraw preview failed at {rpc_step}: {str(exc)[:512]}",
+        ) from exc
+
+
+@router.post("/admin-withdraw/execute")
+async def admin_withdraw_execute(
+    req: AdminWithdrawPreviewRequest,
+    _user: dict = Depends(get_adm_user),
+) -> dict[str, Any]:
+    rpc_step = "init"
+    try:
+        rpc_step = "verify_master_password"
+        _verify_master_password(str(req.master_password or ""))
+        rpc_step = "resolve_wallet_name"
+        wallet = _wallet_name()
+        if not wallet:
+            raise HTTPException(status_code=503, detail="operator wallet not configured")
+        rpc_step = "ensure_wallet_loaded"
+        await _ensure_wallet_loaded(wallet)
+
+        destination = str(req.destination_btc_address or "").strip()
+        if not destination:
+            raise HTTPException(status_code=422, detail="destination_btc_address is required")
+        rpc_step = "validateaddress"
+        valid = await rpc.call("validateaddress", [destination], wallet=wallet)
+        if not isinstance(valid, Mapping) or not bool(valid.get("isvalid")):
+            raise HTTPException(status_code=422, detail="invalid destination_btc_address")
+
+        rpc_step = "build_admin_withdraw_psbt"
+        built = await _build_admin_withdraw_psbt(
+            wallet=wallet,
+            destination=destination,
+            lock_unspents=True,
+        )
+        rpc_step = "walletprocesspsbt"
+        processed = await rpc.call("walletprocesspsbt", [built["psbt"]], wallet=wallet)
+        if not isinstance(processed, Mapping) or not isinstance(processed.get("psbt"), str):
+            raise HTTPException(status_code=502, detail="walletprocesspsbt invalid response")
+        rpc_step = "finalizepsbt"
+        finalized = await rpc.call("finalizepsbt", [processed["psbt"]], wallet=wallet)
+        if not isinstance(finalized, Mapping) or not finalized.get("complete") or not isinstance(finalized.get("hex"), str):
+            raise HTTPException(status_code=502, detail="finalizepsbt incomplete response")
+        rpc_step = "sendrawtransaction"
+        txid = await rpc.call("sendrawtransaction", [finalized["hex"]], wallet=wallet)
+        txid_str = str(txid or "").strip()
+        if not txid_str:
+            raise HTTPException(status_code=502, detail="sendrawtransaction invalid response")
+        return {
+            "ok": True,
+            "txid": txid_str,
+            "destination_btc_address": destination,
+            "fee_rate_sat_vb": 3,
+            "change_address": built["fee_index0"],
+            "utxo_count": built["utxo_count"],
+            "total_input_sats": built["total_input_sats"],
+            "send_sats": built["send_sats"],
+            "fee_sats": built["fee_sats"],
+            "change_sats": built["change_sats"],
+            "rpc_debug": {
+                "validateaddress_response": valid,
+                "selected_inputs": built["selected_inputs"],
+                "walletcreatefundedpsbt_response": built["walletcreatefundedpsbt_response"],
+                "walletprocesspsbt_response": processed,
+                "finalizepsbt_response": finalized,
+                "sendrawtransaction_response": txid,
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"admin withdraw execute failed at {rpc_step}: {str(exc)[:512]}",
+        ) from exc

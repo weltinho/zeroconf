@@ -163,8 +163,8 @@ export function AdmSwapsPage() {
         </div>
       </header>
 
-      <section className="panel panel-rpc">
-        <div className="row">
+      <section className="panel panel-rpc adm-soft-panel">
+        <div className="row adm-toolbar">
           <button
             type="button"
             className={tab === "history" ? "button-ws-start" : ""}
@@ -187,7 +187,7 @@ export function AdmSwapsPage() {
 
         {tab === "history" ? (
           <>
-            <div className="row">
+            <div className="row adm-toolbar">
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
@@ -288,7 +288,7 @@ export function AdmSwapsPage() {
           </>
         ) : (
           <>
-            <div className="row">
+            <div className="row adm-toolbar">
               <input
                 value={orderIdForLogs}
                 onChange={(e) => setOrderIdForLogs(e.target.value)}

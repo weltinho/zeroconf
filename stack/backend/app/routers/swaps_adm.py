@@ -121,6 +121,37 @@ class StuckOrderItem(BaseModel):
     actual_deposit_sats: int
     created_at: str
     last_error: str | None
+    rescue_reason_code: str
+    rescue_reason: str
+
+
+def _build_rescue_reason(order: SwapOrder, *, has_confirmed_utxo: bool) -> tuple[str, str] | None:
+    status = str(order.status or "").strip().lower()
+    payout_txid = str(order.payout_txid or "").strip()
+
+    # Ordem já finalizada/encaminhada não pode aparecer como resgatável.
+    if status == "paid_out":
+        return None
+    if payout_txid:
+        return None
+
+    if status == "error":
+        reason = "Falha operacional registrada e UTXO ainda preso no endereço de depósito."
+        if order.last_error:
+            reason = f"{reason} Último erro: {order.last_error}"
+        return ("order_error_with_funds", reason)
+
+    if status in {"awaiting_deposit", "deposit_detected", "processing", "provider_processing", "confirming"}:
+        conf_txt = "confirmado" if has_confirmed_utxo else "não confirmado (0-conf)"
+        return (
+            "funds_parked_no_payout",
+            f"Há saldo {conf_txt} no endereço de depósito e a ordem ainda não possui payout_txid.",
+        )
+
+    return (
+        "funds_present_unknown_state",
+        "Há saldo no endereço de depósito, mas o status da ordem não está em estado final e não há payout_txid.",
+    )
 
 
 def _sats_to_btc_str(sats: int) -> str:
@@ -226,6 +257,7 @@ async def list_stuck_payments(
     for r in rows:
         dep_addr = r.deposit_btc_address.strip()
         total_sats = int(by_addr_sats_confirmed.get(dep_addr, 0))
+        has_confirmed_utxo = total_sats > 0
         if total_sats <= 0 and r.status == "error":
             total_sats = int(by_addr_sats_any.get(dep_addr, 0))
         if total_sats <= 0:
@@ -243,6 +275,9 @@ async def list_stuck_payments(
                 payout_confirmed = False
         if payout_confirmed:
             continue
+        rescue_reason = _build_rescue_reason(r, has_confirmed_utxo=has_confirmed_utxo)
+        if rescue_reason is None:
+            continue
 
         out.append(
             {
@@ -254,6 +289,8 @@ async def list_stuck_payments(
                 "created_at": r.created_at.isoformat(),
                 "last_error": r.last_error,
                 "mempool_deposit_url": f"{mempool_base}/address/{dep_addr}",
+                "rescue_reason_code": rescue_reason[0],
+                "rescue_reason": rescue_reason[1],
             }
         )
     out.sort(key=lambda x: (x["actual_deposit_sats"], x["created_at"]))
@@ -278,6 +315,10 @@ async def rescue_stuck_payment(
         raise HTTPException(status_code=404, detail="order not found")
     if not order.deposit_btc_address.strip():
         raise HTTPException(status_code=400, detail="order has no deposit address")
+    if str(order.status or "").strip().lower() == "paid_out":
+        raise HTTPException(status_code=400, detail="order already concluded (paid_out); rescue is not allowed")
+    if str(order.payout_txid or "").strip():
+        raise HTTPException(status_code=400, detail="order already has payout_txid; rescue is not allowed")
 
     wallet = settings.bitcoin_operator_wallet.strip()
     if not wallet:

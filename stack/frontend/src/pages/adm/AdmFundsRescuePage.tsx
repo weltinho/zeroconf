@@ -11,6 +11,8 @@ type StuckItem = {
   created_at: string;
   last_error: string | null;
   mempool_deposit_url: string;
+  rescue_reason_code: string;
+  rescue_reason: string;
 };
 
 type RescueHistoryItem = {
@@ -165,12 +167,12 @@ export function AdmFundsRescuePage() {
 
   return (
     <main className="layout">
-      <section className="panel" style={{ maxHeight: "none", overflow: "visible" }}>
+      <section className="panel adm-soft-panel" style={{ maxHeight: "none", overflow: "visible" }}>
         <h2 style={{ marginBottom: "0.35rem" }}>Resgate de Fundos</h2>
         <p className="panel-hint" style={{ marginTop: 0 }}>
           Pagamentos travados por UTXO (ordenados do menor para o maior). Encaminhe para o endereço de resgate desejado.
         </p>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.35rem" }}>
+        <div className="adm-toolbar" style={{ marginBottom: "0.35rem" }}>
           <button type="button" onClick={() => void load()} disabled={loading}>
             {loading ? "Atualizando..." : "Atualizar lista"}
           </button>
@@ -194,6 +196,7 @@ export function AdmFundsRescuePage() {
               <tr>
                 <th>Ordem</th>
                 <th>Último status</th>
+                <th>Motivo do resgate</th>
                 <th>Valor</th>
                 <th>Criada em</th>
                 <th>Endereço depósito</th>
@@ -203,7 +206,7 @@ export function AdmFundsRescuePage() {
             <tbody>
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={6}>Sem pagamentos travados.</td>
+                  <td colSpan={7}>Sem pagamentos travados.</td>
                 </tr>
               ) : (
                 sorted.map((it) => (
@@ -217,6 +220,12 @@ export function AdmFundsRescuePage() {
                             {it.last_error}
                           </span>
                         ) : null}
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ display: "grid", gap: "0.2rem" }}>
+                        <span>{it.rescue_reason || "-"}</span>
+                        <code style={{ fontSize: "0.7rem", opacity: 0.75 }}>{it.rescue_reason_code || "-"}</code>
                       </div>
                     </td>
                     <td>
@@ -264,7 +273,7 @@ export function AdmFundsRescuePage() {
         </div>
       </section>
 
-      <section className="panel" style={{ maxHeight: "none", overflow: "visible" }}>
+      <section className="panel adm-soft-panel" style={{ maxHeight: "none", overflow: "visible" }}>
         <h2 style={{ marginBottom: "0.35rem" }}>Fundos resgatados</h2>
         <p className="panel-hint" style={{ marginTop: 0 }}>
           Histórico dos resgates enviados pela tela administrativa.
@@ -338,7 +347,7 @@ export function AdmFundsRescuePage() {
         </div>
         {detailsError ? <p className="error">{detailsError}</p> : null}
         {selectedDetails ? (
-          <div className="panel" style={{ marginTop: "0.75rem", maxHeight: "none", overflow: "visible" }}>
+          <div className="panel adm-soft-panel" style={{ marginTop: "0.75rem", maxHeight: "none", overflow: "visible" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
               <h3 style={{ margin: 0 }}>Detalhes do resgate #{selectedDetails.rescue_id}</h3>
               <button type="button" onClick={() => setSelectedDetails(null)}>

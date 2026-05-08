@@ -4,6 +4,7 @@ import { AdmGateLayout } from "./pages/adm/AdmGateLayout";
 import { AdmFundsRescuePage } from "./pages/adm/AdmFundsRescuePage";
 import { AdmHomePage } from "./pages/adm/AdmHomePage";
 import { AdmSwapsPage } from "./pages/adm/AdmSwapsPage";
+import { AdmWithdrawPage } from "./pages/adm/AdmWithdrawPage";
 import { ClientAreaPage } from "./pages/ClientAreaPage";
 import { NodeToolsPage } from "./pages/NodeToolsPage";
 
@@ -32,6 +33,7 @@ export default function App() {
           <Route path="node" element={<NodeToolsPage />} />
           <Route path="swaps" element={<AdmSwapsPage />} />
           <Route path="funds-rescue" element={<AdmFundsRescuePage />} />
+          <Route path="withdraw" element={<AdmWithdrawPage />} />
         </Route>
 
         <Route path="/tools/node" element={<Navigate to="/adm/node" replace />} />

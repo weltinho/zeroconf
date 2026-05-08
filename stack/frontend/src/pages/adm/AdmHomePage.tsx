@@ -120,6 +120,17 @@ export function AdmHomePage() {
           <ArrowRightIcon className="adm-card-arrow" />
         </Link>
 
+        <Link to="/adm/withdraw" className="adm-card">
+          <div className="adm-card-icon-wrap">
+            <RefreshIcon className="adm-card-icon" />
+          </div>
+          <div className="adm-card-content">
+            <h2>Saque administrativo</h2>
+            <p>Retira 90% dos UTXOs confirmados para destino informado com taxa fixa de 3 sat/vB e troco no índice 0.</p>
+          </div>
+          <ArrowRightIcon className="adm-card-arrow" />
+        </Link>
+
         <div className="adm-card adm-card-stats">
           <div className="adm-card-icon-wrap">
             <ListIcon className="adm-card-icon" />
