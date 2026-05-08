@@ -8,6 +8,7 @@ import { Combobox, type ComboboxOption, getCountryFlag, getCategoryIcon } from "
 import { ProgressSteps } from "../components/ProgressSteps";
 import { DropdownMenu } from "../components/DropdownMenu";
 import { USE_MOCKS, MOCK_COUNTRIES, MOCK_CATEGORIES, getMockProducts } from "../mocks/catalogMocks";
+import { USE_ORDER_MOCKS, useMockOrders } from "../mocks/orderMocks";
 
 type CreateOrderResponse = {
   order_id: number;
@@ -262,6 +263,15 @@ export function ClientAreaPage() {
   const [boltzCreated, setBoltzCreated] = useState<CreateBoltzOrderResponse | null>(null);
   const [boltzOrder, setBoltzOrder] = useState<GetBoltzOrderResponse | null>(null);
   const [boltzFees, setBoltzFees] = useState<BoltzFees | null>(null);
+
+  // Mock orders hook - simula progressão de estados sem backend
+  const {
+    bitrefillOrder: mockBitrefillOrder,
+    boltzOrder: mockBoltzOrder,
+    createBitrefillOrder: createMockBitrefillOrder,
+    createBoltzOrder: createMockBoltzOrder,
+    reset: resetMockOrders,
+  } = useMockOrders();
 
   const [comprasCategorySlug, setComprasCategorySlug] = useState("");
   const [comprasCountryCode, setComprasCountryCode] = useState("BR");
@@ -536,8 +546,12 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     pollCounterRef.current = {};
     initialOrderLoadedRef.current = false;
     setMode("onchain");
+    // Reset mock orders também
+    if (USE_ORDER_MOCKS) {
+      resetMockOrders();
+    }
     void navigate("/cliente", { replace: true });
-  }, [navigate, stopPolling]);
+  }, [navigate, stopPolling, resetMockOrders]);
 
   async function onCreateBoltz(e: FormEvent) {
     e.preventDefault();
@@ -546,6 +560,14 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     setBoltzCreated(null);
     setBoltzOrder(null);
     setCreating(true);
+    
+    // Usa mock quando ativado
+    if (USE_ORDER_MOCKS) {
+      createMockBoltzOrder(invoice.trim());
+      setCreating(false);
+      return;
+    }
+    
     try {
       const body = { invoice: invoice.trim() };
       const r = await fetch(apiUrl("/client/boltz/orders"), {
@@ -614,6 +636,16 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     setBoltzCreated(null);
     setBoltzOrder(null);
     setComprasSubmitting(true);
+    
+    // Usa mock quando ativado
+    if (USE_ORDER_MOCKS) {
+      const productName = comprasSelectedProduct?.name || "Produto";
+      const packageValue = comprasSelectedPackage?.value?.toString() || "100";
+      createMockBitrefillOrder(productName, packageValue);
+      setComprasSubmitting(false);
+      return;
+    }
+    
     try {
       const r = await fetch(apiUrl("/client/bitrefill/orders"), {
         method: "POST",
@@ -652,9 +684,16 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
   }
 
   const orderId = created?.order_id ?? order?.order_id ?? null;
-  const liveOrder = order ?? created;
-  const liveBoltz = boltzOrder ?? boltzCreated;
-  const activeOrderId = orderId ?? liveBoltz?.order_id ?? null;
+  
+  // Usa mocks quando ativados, senão usa dados reais
+  const liveOrder = USE_ORDER_MOCKS && mockBitrefillOrder 
+    ? mockBitrefillOrder as unknown as (GetOrderResponse | CreateOrderResponse)
+    : (order ?? created);
+  const liveBoltz = USE_ORDER_MOCKS && mockBoltzOrder
+    ? mockBoltzOrder as unknown as (GetBoltzOrderResponse | CreateBoltzOrderResponse)
+    : (boltzOrder ?? boltzCreated);
+  
+  const activeOrderId = orderId ?? liveBoltz?.order_id ?? (USE_ORDER_MOCKS ? (mockBitrefillOrder?.order_id ?? mockBoltzOrder?.order_id ?? null) : null);
   const formLocked = activeOrderId !== null;
   const requiredBtc = liveOrder ? satsToBtc(liveOrder.required_deposit_sats) : null;
   const outputBtc = liveOrder ? satsToBtc(liveOrder.output_sats) : null;
@@ -667,7 +706,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
       : null;
 
   const isBitrefillOrder =
-    (order?.provider ?? created?.provider) === "bitrefill";
+    (order?.provider ?? created?.provider) === "bitrefill" || (USE_ORDER_MOCKS && mockBitrefillOrder !== null);
   const orderAwaitingUserDeposit =
     liveOrder &&
     (liveOrder.status === "awaiting_deposit" || liveOrder.status === "created");
@@ -676,14 +715,18 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     !orderAwaitingUserDeposit &&
     liveOrder.status !== "error";
 
-  const boltzStatus = boltzOrder?.status ?? boltzCreated?.status ?? null;
+  // Usa status do mock quando disponível
+  const boltzStatus = USE_ORDER_MOCKS && mockBoltzOrder 
+    ? mockBoltzOrder.status 
+    : (boltzOrder?.status ?? boltzCreated?.status ?? null);
   const boltzSwapId = liveBoltz?.boltz_swap_id ?? null;
   const clientDepositAddress =
-    boltzCreated?.deposit_btc_address ??
+    (USE_ORDER_MOCKS && mockBoltzOrder?.deposit_btc_address) ||
+    (boltzCreated?.deposit_btc_address ??
     boltzOrder?.deposit_btc_address ??
     boltzOrder?.our_deposit_address ??
-    null;
-  const boltzExpectedSat = boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null;
+    null);
+  const boltzExpectedSat = (USE_ORDER_MOCKS && mockBoltzOrder?.required_deposit_sats) || (boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null);
   const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
   const boltzLockupTxId = boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null;
   const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
