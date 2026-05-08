@@ -146,7 +146,7 @@ export function HomePage() {
 
         {/* Footer */}
         <footer className="swap-footer">
-          <p>Infraestrutura Bitcoin para operadores</p>
+          <p>Roteamento seguro de liquidez 1:1</p>
         </footer>
       </div>
 

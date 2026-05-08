@@ -4,6 +4,9 @@ import { apiUrl } from "../api/url";
 import { AppLogo } from "../components/AppLogo";
 import AddressQRCode from "../components/AddressQRCode";
 import { getUiText } from "../i18n";
+import { Combobox, type ComboboxOption, getCountryFlag, getCategoryIcon } from "../components/Combobox";
+import { ProgressSteps } from "../components/ProgressSteps";
+import { DropdownMenu } from "../components/DropdownMenu";
 
 type CreateOrderResponse = {
   order_id: number;
@@ -675,6 +678,30 @@ export function ClientAreaPage() {
     (s) => s.key === String(order?.status ?? created?.status ?? ""),
   );
 
+  // Progress steps for tracking
+  const progressSteps = useMemo(() => {
+    if (liveBoltz) {
+      return BOLTZ_STEPS.map((s) => ({ key: s.key, label: s.label }));
+    }
+    if (isBitrefillOrder) {
+      return BITREFILL_STEPS.map((s) => ({ key: s.key, label: s.label }));
+    }
+    return [
+      { key: "awaiting_deposit", label: "Aguardando depósito" },
+      { key: "deposit_detected", label: "Depósito detectado" },
+      { key: "confirming", label: "Confirmando" },
+      { key: "paid_out", label: "Concluído" },
+    ];
+  }, [liveBoltz, isBitrefillOrder]);
+
+  const currentStepKey = useMemo(() => {
+    if (liveBoltz) return boltzStatus || "awaiting_deposit";
+    if (liveOrder) return liveOrder.status || "awaiting_deposit";
+    return "awaiting_deposit";
+  }, [liveBoltz, liveOrder, boltzStatus]);
+
+  const isOrderError = liveOrder?.status === "error" || boltzStatus === "error";
+
   // Preview ao vivo — extrai sats da invoice BOLT11.
   const invoiceSats = useMemo(() => parseBolt11Sats(invoice), [invoice]);
   const invoicePreview = useMemo(() => {
@@ -760,55 +787,92 @@ export function ClientAreaPage() {
     setUnit(next);
   }
 
+  // Helper to build combobox options
+  const countryOptions: ComboboxOption[] = useMemo(
+    () =>
+      comprasCountries.map((c) => ({
+        value: c.code,
+        label: c.name,
+        icon: <span style={{ fontSize: "1.25rem" }}>{getCountryFlag(c.code)}</span>,
+      })),
+    [comprasCountries]
+  );
+
+  const categoryOptions: ComboboxOption[] = useMemo(
+    () =>
+      comprasCategories.map((c) => ({
+        value: c.slug,
+        label: c.label,
+        icon: getCategoryIcon(c.slug),
+      })),
+    [comprasCategories]
+  );
+
+  const productOptions: ComboboxOption[] = useMemo(
+    () =>
+      comprasProducts.map((p) => ({
+        value: String(p.id),
+        label: p.name || "Produto",
+        description: p.in_stock ? undefined : "Indisponível",
+        disabled: !p.in_stock,
+      })),
+    [comprasProducts]
+  );
+
+  const packageOptions: ComboboxOption[] = useMemo(
+    () =>
+      (comprasSelectedProduct?.packages || []).map((pk) => ({
+        value: String(pk.id),
+        label: `${pk.value ?? "?"} ${comprasSelectedProduct?.currency ?? ""}`,
+        description: pk.price != null ? `ref. ${pk.price}` : undefined,
+      })),
+    [comprasSelectedProduct]
+  );
+
   return (
     <main className="layout">
-      <nav className="page-nav" aria-label="Navigation">
-        <Link to="/" className="page-nav-link">
-          Home
-        </Link>
-        <span className="page-nav-sep" aria-hidden="true">
-          /
-        </span>
-        <span className="page-nav-current">cliente</span>
-      </nav>
-
-      <header className="hero">
-        <div className="hero-brand">
-          <AppLogo className="hero-logo" variant="matrix" aria-label={t.logoAriaLabel} />
-          <div className="hero-copy">
-            <h1>cliente</h1>
-            <p>Selecione uma opção e realize seu depósito pra concluir a operação</p>
+      {/* Compact Header */}
+      <header className="client-page-header">
+        <div className="client-page-header-main">
+          <Link to="/" style={{ display: "inline-block", marginBottom: "0.5rem" }}>
+            <AppLogo className="hero-logo" variant="matrix" aria-label={t.logoAriaLabel} style={{ height: "32px" }} />
+          </Link>
+          <p className="client-page-subtitle" style={{ margin: 0 }}>
+            Roteamento seguro de liquidez 1:1
+          </p>
+          <div className="badges" style={{ marginTop: "0.5rem" }}>
+            <span className="badge">REDE: {chain.toUpperCase()}</span>
+            {chain === "signet" && (
+              <span
+                className="badge"
+                style={{
+                  borderColor: "rgba(163, 230, 53, 0.45)",
+                  background: "rgba(163, 230, 53, 0.12)",
+                  color: "var(--warning, #eab308)",
+                }}
+              >
+                Simulação
+              </span>
+            )}
           </div>
         </div>
-        <div className="badges">
-          <span className="badge">REDE: {chain.toUpperCase()}</span>
-          {chain === "signet" ? (
-            <span
-              className="badge"
-              style={{
-                borderColor: "rgba(163, 230, 53, 0.45)",
-                background: "rgba(163, 230, 53, 0.12)",
-                color: "var(--color-warning, #a3e635)",
-              }}
-            >
-              Simulação
-            </span>
-          ) : null}
+        <div className="client-page-actions">
+          {formLocked && (
+            <DropdownMenu
+              items={[
+                {
+                  label: "Nova operação",
+                  onClick: resetToNewOrder,
+                  icon: (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  ),
+                },
+              ]}
+            />
+          )}
         </div>
-        {chain === "signet" ? (
-          <p
-            className="hero-meta"
-            role="note"
-            style={{
-              marginTop: "0.35rem",
-              color: "var(--color-warning, #a3e635)",
-              fontSize: "0.85rem",
-            }}
-          >
-            Node está em signet, portanto isso é uma simulação.
-          </p>
-        ) : null}
-        <p className="hero-meta">{t.localeFixedBr}</p>
       </header>
 
       <div className="workspace client-hml-workspace">
@@ -890,14 +954,9 @@ export function ClientAreaPage() {
 
             {error ? <p className="error">{error}</p> : null}
             {formLocked ? (
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
-                <p className="panel-hint" style={{ margin: "0 0 0.25rem" }}>
-                  Ordem ativa #{activeOrderId}. Campos bloqueados para evitar criação de ordem paralela.
-                </p>
-                <button type="button" onClick={resetToNewOrder}>
-                  Nova troca
-                </button>
-              </div>
+              <p className="panel-hint" style={{ margin: "0 0 0.5rem", padding: "0.5rem 0.75rem", background: "var(--accent-subtle)", borderRadius: "var(--radius-sm)", border: "1px solid var(--border-accent)" }}>
+                Ordem <strong>#{activeOrderId}</strong> em andamento. Use o menu no canto superior direito para iniciar nova operação.
+              </p>
             ) : null}
 
             {mode === "onchain" ? (
@@ -1058,74 +1117,57 @@ export function ClientAreaPage() {
                   </p>
                 ) : null}
 
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>País</span>
-                  <select
+                <div className="client-form-field">
+                  <span className="client-form-field-label">País</span>
+                  <Combobox
+                    options={countryOptions}
                     value={comprasCountryCode}
-                    onChange={(e) => setComprasCountryCode(e.target.value)}
+                    onChange={setComprasCountryCode}
+                    placeholder="Selecione o país"
+                    searchPlaceholder="Buscar país..."
                     disabled={bitrefillLoading || formLocked}
-                  >
-                    {comprasCountries.map((c) => (
-                      <option key={c.code} value={c.code}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    loading={bitrefillLoading}
+                  />
+                </div>
 
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Categoria</span>
-                  <select
+                <div className="client-form-field">
+                  <span className="client-form-field-label">Categoria</span>
+                  <Combobox
+                    options={categoryOptions}
                     value={comprasCategorySlug}
-                    onChange={(e) => setComprasCategorySlug(e.target.value)}
+                    onChange={setComprasCategorySlug}
+                    placeholder={bitrefillLoading ? "Carregando..." : "Todas as categorias"}
+                    searchPlaceholder="Buscar categoria..."
                     disabled={bitrefillLoading || formLocked}
-                  >
-                    {comprasCategories.length === 0 ? (
-                      <option value="">{(bitrefillLoading && !bitrefillError) ? "Carregando…" : "—"}</option>
-                    ) : (
-                      comprasCategories.map((c) => (
-                        <option key={c.slug || "__all"} value={c.slug}>
-                          {c.label}
-                        </option>
-                      ))
-                    )}
-                  </select>
-                </label>
+                    loading={bitrefillLoading}
+                  />
+                </div>
 
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Produto</span>
-                  <select
+                <div className="client-form-field">
+                  <span className="client-form-field-label">Produto</span>
+                  <Combobox
+                    options={productOptions}
                     value={comprasProductId}
-                    onChange={(e) => setComprasProductId(e.target.value)}
+                    onChange={setComprasProductId}
+                    placeholder="Selecione um produto"
+                    searchPlaceholder="Buscar produto..."
                     disabled={bitrefillLoading || formLocked}
-                  >
-                    <option value="">Selecione…</option>
-                    {comprasProducts.map((p) => (
-                      <option key={String(p.id)} value={String(p.id)} disabled={!p.in_stock}>
-                        {p.name}
-                        {!p.in_stock ? " (indisponível)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    emptyMessage="Nenhum produto encontrado"
+                  />
+                </div>
 
                 {comprasSelectedProduct && comprasSelectedProduct.packages.length > 0 ? (
-                  <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                    <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>Valor / pacote</span>
-                    <select
+                  <div className="client-form-field">
+                    <span className="client-form-field-label">Valor / pacote</span>
+                    <Combobox
+                      options={packageOptions}
                       value={comprasPackageId}
-                      onChange={(e) => setComprasPackageId(e.target.value)}
+                      onChange={setComprasPackageId}
+                      placeholder="Selecione o valor"
+                      searchPlaceholder="Buscar valor..."
                       disabled={!comprasProductId || formLocked}
-                    >
-                      <option value="">Selecione…</option>
-                      {comprasSelectedProduct.packages.map((pk) => (
-                        <option key={String(pk.id)} value={String(pk.id)}>
-                          {String(pk.value ?? "?")} {comprasSelectedProduct.currency ?? ""}
-                          {pk.price != null ? ` · ref. ${pk.price}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                    />
+                  </div>
                 ) : comprasSelectedProduct?.range ? (
                   <p className="panel-hint" style={{ margin: 0 }}>
                     Produto com valor variável (range) — escolha na API Bitrefill com passo definido; fluxo
@@ -1242,37 +1284,14 @@ export function ClientAreaPage() {
                 Swap Lightning <strong>#{liveBoltz.order_id}</strong>
               </p>
 
-              {/* Indicador de etapas */}
-              {boltzStatus !== "error" && (
-                <div style={{ display: "flex", gap: "0.2rem", margin: "0.5rem 0 0.9rem", fontSize: "0.68rem" }}>
-                  {BOLTZ_STEPS.map((s, i) => (
-                    <div
-                      key={s.key}
-                      style={{
-                        flex: 1,
-                        padding: "0.3rem 0.1rem",
-                        textAlign: "center",
-                        borderRadius: "4px",
-                        background:
-                          i < boltzStepIndex
-                            ? "rgba(0,255,70,0.12)"
-                            : i === boltzStepIndex
-                            ? "rgba(0,255,70,0.28)"
-                            : "rgba(255,255,255,0.04)",
-                        color: i <= boltzStepIndex ? "var(--mx-green, #00ff46)" : "var(--fc-muted)",
-                        border:
-                          i === boltzStepIndex
-                            ? "1px solid rgba(0,255,70,0.5)"
-                            : "1px solid transparent",
-                        lineHeight: 1.3,
-                      }}
-                    >
-                      {i < boltzStepIndex ? "✓ " : i === boltzStepIndex ? "▶ " : ""}
-                      {s.label}
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Progress Steps Visual */}
+              <div style={{ margin: "1rem 0" }}>
+                <ProgressSteps
+                  steps={BOLTZ_STEPS.map((s) => ({ key: s.key, label: s.label }))}
+                  currentStepKey={boltzStatus || "awaiting_deposit"}
+                  isError={boltzStatus === "error"}
+                />
+              </div>
 
               {/* Endereço de depósito — mostrar enquanto aguardando */}
               {clientDepositAddress &&
@@ -1430,46 +1449,22 @@ export function ClientAreaPage() {
                   </>
                 )}
               </p>
-              {isBitrefillOrder && bitrefillStepIndex >= 0 ? (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "0.15rem",
-                    margin: "0.45rem 0 0.75rem",
-                    fontSize: "0.62rem",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  {BITREFILL_STEPS.map((s, i) => (
-                    <div
-                      key={s.key}
-                      style={{
-                        flex: "1 1 18%",
-                        minWidth: "4.5rem",
-                        padding: "0.28rem 0.08rem",
-                        textAlign: "center",
-                        borderRadius: "4px",
-                        background:
-                          i < bitrefillStepIndex
-                            ? "rgba(0,255,70,0.12)"
-                            : i === bitrefillStepIndex
-                              ? "rgba(0,255,70,0.28)"
-                              : "rgba(255,255,255,0.04)",
-                        color:
-                          i <= bitrefillStepIndex ? "var(--mx-green, #00ff46)" : "var(--fc-muted)",
-                        border:
-                          i === bitrefillStepIndex
-                            ? "1px solid rgba(0,255,70,0.5)"
-                            : "1px solid transparent",
-                        lineHeight: 1.25,
-                      }}
-                    >
-                      {i < bitrefillStepIndex ? "✓ " : i === bitrefillStepIndex ? "▶ " : ""}
-                      {s.label}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+              {/* Progress Steps Visual */}
+              <div style={{ margin: "1rem 0" }}>
+                <ProgressSteps
+                  steps={isBitrefillOrder 
+                    ? BITREFILL_STEPS.map((s) => ({ key: s.key, label: s.label }))
+                    : [
+                        { key: "awaiting_deposit", label: "Aguardando depósito" },
+                        { key: "deposit_detected", label: "Depósito detectado" },
+                        { key: "confirming", label: "Confirmando" },
+                        { key: "paid_out", label: "Concluído" },
+                      ]
+                  }
+                  currentStepKey={liveOrder.status || "awaiting_deposit"}
+                  isError={liveOrder.status === "error"}
+                />
+              </div>
               <div className="client-inline-copy">
                 <p>
                   {orderDepositSeenByBackend ? (
