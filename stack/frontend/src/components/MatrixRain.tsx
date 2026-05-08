@@ -64,8 +64,9 @@ export function MatrixRain() {
     }
 
     function draw() {
-      // Limpa o canvas completamente - sem borrão
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Leve borrão para efeito de trail suave
+      ctx.fillStyle = "rgba(0, 0, 0, 0.15)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = "center";
