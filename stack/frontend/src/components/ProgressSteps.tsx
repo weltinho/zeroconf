@@ -12,7 +12,7 @@ type ProgressStepsProps = {
 
 function CheckIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
       <path
         d="M3 7L5.5 9.5L11 4"
         stroke="currentColor"
@@ -26,7 +26,7 @@ function CheckIcon() {
 
 function LoadingIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" className="progress-step-loading">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" className="progress-step-loading">
       <circle cx="7" cy="7" r="5" stroke="currentColor" strokeWidth="2" strokeDasharray="20" strokeDashoffset="10" />
     </svg>
   );
@@ -34,7 +34,7 @@ function LoadingIcon() {
 
 function ErrorIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none">
       <path d="M4 4L10 10M10 4L4 10" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
     </svg>
   );
@@ -42,44 +42,64 @@ function ErrorIcon() {
 
 export function ProgressSteps({ steps, currentStepKey, isError = false }: ProgressStepsProps) {
   const currentIndex = steps.findIndex((s) => s.key === currentStepKey);
+  
+  // Filtra para mostrar apenas: anterior (se houver), atual, próximo (se houver)
+  const visibleSteps = steps
+    .map((step, index) => ({ step, index }))
+    .filter(({ index }) => {
+      // Mostrar step anterior, atual e próximo
+      return index >= currentIndex - 1 && index <= currentIndex + 1;
+    });
+
+  // Calcula se há steps ocultos antes/depois
+  const hasHiddenBefore = currentIndex > 1;
+  const hasHiddenAfter = currentIndex < steps.length - 2;
 
   return (
-    <div className="progress-steps">
-      {steps.map((step, index) => {
+    <div className="progress-steps-horizontal">
+      {hasHiddenBefore && (
+        <div className="progress-step-hidden-indicator">
+          <span className="progress-step-hidden-count">{currentIndex - 1}</span>
+        </div>
+      )}
+      
+      {visibleSteps.map(({ step, index }, visibleIndex) => {
         const isCompleted = index < currentIndex;
         const isCurrent = index === currentIndex;
-        const isPending = index > currentIndex;
 
         let statusClass = "pending";
         if (isCompleted) statusClass = "completed";
         if (isCurrent && !isError) statusClass = "current";
         if (isCurrent && isError) statusClass = "error";
 
+        const isLast = visibleIndex === visibleSteps.length - 1;
+
         return (
-          <div key={step.key} className={`progress-step ${statusClass}`}>
-            <div className="progress-step-indicator">
-              <div className="progress-step-icon">
-                {isCompleted ? (
-                  <CheckIcon />
-                ) : isCurrent && isError ? (
-                  <ErrorIcon />
-                ) : isCurrent ? (
-                  <LoadingIcon />
-                ) : (
-                  <span className="progress-step-number">{index + 1}</span>
-                )}
-              </div>
-              {index < steps.length - 1 && <div className="progress-step-line" />}
-            </div>
-            <div className="progress-step-content">
-              <span className="progress-step-label">{step.label}</span>
-              {step.description && isCurrent && (
-                <span className="progress-step-description">{step.description}</span>
+          <div key={step.key} className={`progress-step-h ${statusClass}`}>
+            <div className="progress-step-h-icon">
+              {isCompleted ? (
+                <CheckIcon />
+              ) : isCurrent && isError ? (
+                <ErrorIcon />
+              ) : isCurrent ? (
+                <LoadingIcon />
+              ) : (
+                <span className="progress-step-h-number">{index + 1}</span>
               )}
             </div>
+            <span className="progress-step-h-label">{step.label}</span>
+            {!isLast && !hasHiddenAfter && <div className="progress-step-h-line" />}
+            {!isLast && hasHiddenAfter && visibleIndex === visibleSteps.length - 2 && <div className="progress-step-h-line" />}
+            {isLast && !hasHiddenAfter ? null : isLast ? null : <div className="progress-step-h-line" />}
           </div>
         );
       })}
+      
+      {hasHiddenAfter && (
+        <div className="progress-step-hidden-indicator">
+          <span className="progress-step-hidden-count">+{steps.length - currentIndex - 2}</span>
+        </div>
+      )}
     </div>
   );
 }
