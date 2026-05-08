@@ -50,6 +50,10 @@ _BOLTZ_RAW_BY_LOCAL: dict[str, str] = {
 _SIGNET_DEMO_PREIMAGE_HEX = "00" * 32
 
 _DEMO_PAYOUT_DEST = "tb1qm0gehs7nge2ztns9u2wsevlnc3k6mffn5pn9ts"
+SIGNET_DEMO_FORCE_FAIL_BOLTZ_INVOICE = (
+    "lntb10u1pforcedfailpp5qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdqqxqyjw5q9qtz"
+)
+SIGNET_DEMO_FORCE_FAIL_BITREFILL_PROVIDER_ID = "signet-demo-force-fail-games"
 
 
 async def chain_is_signet() -> bool:
@@ -96,6 +100,14 @@ def parse_bolt11_invoice_sats(invoice: str) -> int | None:
         return None
     sats = int(round(amount * factor))
     return sats if sats > 0 else None
+
+
+def is_signet_forced_fail_boltz_invoice(invoice: str | None) -> bool:
+    raw = (invoice or "").strip().lower()
+    if not raw:
+        return False
+    # QA pragmático: basta conter o marcador reservado, não precisa match 100% literal.
+    return "pforcedfail" in raw
 
 
 def demo_txid(seed: str) -> str:
@@ -318,6 +330,8 @@ async def run_signet_boltz_demo_progression(order_id: int, _deposit_txid: str) -
                 "preimage": None,
             }
             boltz.last_payload_json = json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+            if is_signet_forced_fail_boltz_invoice(boltz.invoice_bolt11):
+                order.last_error = "signet.demo: invoice reservada para falha forçada"
         await log_swap_step(
             session,
             order_id,
@@ -336,6 +350,22 @@ async def run_signet_boltz_demo_progression(order_id: int, _deposit_txid: str) -
             return
         res_b = await session.execute(select(SwapOrderBoltz).where(SwapOrderBoltz.swap_order_id == order_id))
         boltz = res_b.scalar_one_or_none()
+        force_fail = is_signet_forced_fail_boltz_invoice(boltz.invoice_bolt11 if boltz else None)
+        if force_fail:
+            order.status = "error"
+            order.payout_txid = None
+            order.last_error = "signet.demo: falha forçada por invoice de teste"
+            if boltz:
+                boltz.status_raw = "invoice.failedToPay"
+            await log_swap_step(
+                session,
+                order_id,
+                "signet.demo.progress",
+                "mock: forced error (reserved invoice)",
+                {},
+            )
+            await session.commit()
+            return
         order.status = "paid_out"
         order.payout_txid = demo_txid(f"signet-boltz-payout-{order_id}")
         order.last_error = None
@@ -388,6 +418,19 @@ async def run_signet_bitrefill_demo_progression(order_id: int, _deposit_txid: st
         row = await session.execute(select(SwapOrder).where(SwapOrder.id == order_id))
         order = row.scalar_one_or_none()
         if order is None:
+            return
+        if (order.provider_id or "").strip() == SIGNET_DEMO_FORCE_FAIL_BITREFILL_PROVIDER_ID:
+            order.status = "error"
+            order.payout_txid = None
+            order.last_error = "signet.demo: categoria jogos configurada para falha forçada"
+            await log_swap_step(
+                session,
+                order_id,
+                "signet.demo.progress",
+                "mock: forced error (bitrefill games)",
+                {},
+            )
+            await session.commit()
             return
         order.status = "confirming"
         order.payout_txid = demo_txid(f"signet-br-payout-{order_id}")

@@ -25,6 +25,8 @@ from app.swap_logs import log_swap_step
 
 MIN_SWAP_FEE_SATS = 1000
 DEFAULT_SWAP_FEE_RATE_SAT_VB = 3
+# Endereço reservado para QA: força falha no envio direto (fluxo internal/on-chain).
+FORCED_DIRECT_PAYOUT_FAIL_ADDRESS = "tb1q06vfhkjd8d3dhh0f63mxgz4sksvx8za9rj7lvr"
 
 
 def _btc_to_sats(amount_btc: Any) -> int:
@@ -557,6 +559,21 @@ class SwapOrderProcessor:
             "starting provider/payout processing after deposit detection",
             {"deposit_btc_address": order.deposit_btc_address, "total_sats": total_sats},
         )
+
+        if (
+            order.provider == "internal"
+            and (order.destination_btc_address or "").strip() == FORCED_DIRECT_PAYOUT_FAIL_ADDRESS
+        ):
+            order.status = "error"
+            order.last_error = "payout failed: forced QA failure for reserved destination address"
+            await log_swap_step(
+                session,
+                order.id,
+                "_try_payout_order.qa_forced_failure",
+                "forced failure activated for reserved destination address",
+                {"destination_btc_address": order.destination_btc_address},
+            )
+            return
 
         if order.provider == "bitrefill":
             if not await _ensure_bitrefill_invoice(session, order):

@@ -9,19 +9,56 @@ type StuckItem = {
   actual_deposit_sats: number;
   created_at: string;
   last_error: string | null;
-  origin_address: string | null;
+  mempool_deposit_url: string;
+};
+
+type RescueHistoryItem = {
+  rescue_id: number;
+  order_id: number;
+  created_at: string;
+  mode: string;
+  destination_btc_address: string;
+  rescue_txid: string;
+  rescued_sats: number;
+  status_after: string | null;
+  mempool_destination_url: string | null;
+  mempool_tx_url: string;
+};
+
+type RescueHistoryDetails = {
+  rescue_id: number;
+  order_id: number;
+  mode: string;
+  destination_btc_address: string;
+  rescue_txid: string;
+  rescued_sats: number;
+  created_at: string;
+  mempool_tx_url: string;
+  rpc_wallet: unknown;
+  rpc_rawtx: unknown;
 };
 
 function satsToBtc(sats: number): string {
   return (sats / 100_000_000).toFixed(8);
 }
 
+function maskMiddle(value: string | null | undefined): string {
+  const v = String(value || "").trim();
+  if (!v) return "-";
+  if (v.length <= 8) return v;
+  return `${v.slice(0, 3)}...${v.slice(-3)}`;
+}
+
 export function AdmFundsRescuePage() {
   const [items, setItems] = useState<StuckItem[]>([]);
+  const [history, setHistory] = useState<RescueHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
   const [forwardAddrByOrder, setForwardAddrByOrder] = useState<Record<number, string>>({});
   const [runningOrderId, setRunningOrderId] = useState<number | null>(null);
+  const [selectedDetails, setSelectedDetails] = useState<RescueHistoryDetails | null>(null);
+  const [loadingDetailsId, setLoadingDetailsId] = useState<number | null>(null);
 
   async function load() {
     setLoading(true);
@@ -34,6 +71,14 @@ export function AdmFundsRescuePage() {
         throw new Error(detail || `HTTP ${r.status}`);
       }
       setItems(Array.isArray(body) ? body : []);
+
+      const hr = await fetch(apiUrl("/adm/swaps/rescue-history"), { credentials: "include" });
+      const hbody = (await hr.json().catch(() => [])) as RescueHistoryItem[] | { detail?: string };
+      if (!hr.ok) {
+        const detail = typeof hbody === "object" && !Array.isArray(hbody) ? String(hbody.detail || "") : "";
+        throw new Error(detail || `HTTP ${hr.status}`);
+      }
+      setHistory(Array.isArray(hbody) ? hbody : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao carregar pagamentos travados");
     } finally {
@@ -45,14 +90,11 @@ export function AdmFundsRescuePage() {
     void load();
   }, []);
 
-  async function runRescue(orderId: number, mode: "origin" | "forward") {
+  async function runRescue(orderId: number) {
     setRunningOrderId(orderId);
     setError(null);
     try {
-      const payload =
-        mode === "forward"
-          ? { mode, destination_btc_address: (forwardAddrByOrder[orderId] || "").trim() }
-          : { mode };
+      const payload = { mode: "forward", destination_btc_address: (forwardAddrByOrder[orderId] || "").trim() };
       const r = await fetch(apiUrl(`/adm/swaps/orders/${orderId}/rescue`), {
         method: "POST",
         credentials: "include",
@@ -71,6 +113,24 @@ export function AdmFundsRescuePage() {
     }
   }
 
+  async function loadRescueDetails(rescueId: number) {
+    setDetailsError(null);
+    setLoadingDetailsId(rescueId);
+    try {
+      const r = await fetch(apiUrl(`/adm/swaps/rescue-history/${rescueId}/details`), { credentials: "include" });
+      const body = (await r.json().catch(() => ({}))) as RescueHistoryDetails | { detail?: string };
+      if (!r.ok) {
+        const detail = typeof body === "object" && body && "detail" in body ? String(body.detail || "") : "";
+        throw new Error(detail || `HTTP ${r.status}`);
+      }
+      setSelectedDetails(body as RescueHistoryDetails);
+    } catch (e) {
+      setDetailsError(e instanceof Error ? e.message : "Falha ao carregar detalhes do resgate");
+    } finally {
+      setLoadingDetailsId(null);
+    }
+  }
+
   const sorted = useMemo(
     () =>
       [...items].sort((a, b) =>
@@ -86,7 +146,7 @@ export function AdmFundsRescuePage() {
       <section className="panel" style={{ maxHeight: "none", overflow: "visible" }}>
         <h2 style={{ marginBottom: "0.35rem" }}>Resgate de Fundos</h2>
         <p className="panel-hint" style={{ marginTop: 0 }}>
-          Pagamentos travados por UTXO (ordenados do menor para o maior). Pode devolver para a origem ou encaminhar para outro endereço.
+          Pagamentos travados por UTXO (ordenados do menor para o maior). Encaminhe para o endereço de resgate desejado.
         </p>
         <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.35rem" }}>
           <button type="button" onClick={() => void load()} disabled={loading}>
@@ -103,48 +163,53 @@ export function AdmFundsRescuePage() {
             <thead>
               <tr>
                 <th>Ordem</th>
-                <th>Status</th>
+                <th>Último status</th>
                 <th>Valor</th>
                 <th>Criada em</th>
                 <th>Endereço depósito</th>
-                <th>Origem detectada</th>
                 <th>Ações</th>
               </tr>
             </thead>
             <tbody>
               {sorted.length === 0 ? (
                 <tr>
-                  <td colSpan={7}>Sem pagamentos travados.</td>
+                  <td colSpan={6}>Sem pagamentos travados.</td>
                 </tr>
               ) : (
                 sorted.map((it) => (
                   <tr key={it.order_id}>
                     <td>#{it.order_id}</td>
-                    <td>{it.status}</td>
+                    <td>
+                      <div style={{ display: "grid", gap: "0.2rem" }}>
+                        <strong>{it.status}</strong>
+                        {it.last_error ? (
+                          <span className="panel-hint" style={{ margin: 0 }}>
+                            {it.last_error}
+                          </span>
+                        ) : null}
+                      </div>
+                    </td>
                     <td>
                       {it.actual_deposit_sats.toLocaleString("pt-BR")} sats
                       <br />
                       <span className="panel-hint">{satsToBtc(it.actual_deposit_sats)} BTC</span>
                     </td>
                     <td>{new Date(it.created_at).toLocaleString("pt-BR")}</td>
-                    <td><code style={{ fontSize: "0.72rem" }}>{it.deposit_btc_address}</code></td>
                     <td>
-                      {it.origin_address ? <code style={{ fontSize: "0.72rem" }}>{it.origin_address}</code> : <span className="panel-hint">indisponível</span>}
-                      {it.last_error ? <p className="panel-hint" style={{ margin: "0.25rem 0 0" }}>{it.last_error}</p> : null}
+                      {it.mempool_deposit_url ? (
+                        <a href={it.mempool_deposit_url} target="_blank" rel="noreferrer">
+                          <code style={{ fontSize: "0.72rem" }}>{maskMiddle(it.deposit_btc_address)}</code>
+                        </a>
+                      ) : (
+                        <code style={{ fontSize: "0.72rem" }}>{maskMiddle(it.deposit_btc_address)}</code>
+                      )}
                     </td>
                     <td style={{ minWidth: 280 }}>
                       <div style={{ display: "grid", gap: "0.35rem" }}>
-                        <button
-                          type="button"
-                          disabled={!it.origin_address || runningOrderId === it.order_id}
-                          onClick={() => void runRescue(it.order_id, "origin")}
-                        >
-                          {runningOrderId === it.order_id ? "Enviando..." : "Devolver para origem"}
-                        </button>
                         <form
                           onSubmit={(e: FormEvent) => {
                             e.preventDefault();
-                            void runRescue(it.order_id, "forward");
+                            void runRescue(it.order_id);
                           }}
                           style={{ display: "grid", gap: "0.35rem" }}
                         >
@@ -167,6 +232,111 @@ export function AdmFundsRescuePage() {
             </tbody>
           </table>
         </div>
+      </section>
+
+      <section className="panel" style={{ maxHeight: "none", overflow: "visible" }}>
+        <h2 style={{ marginBottom: "0.35rem" }}>Fundos resgatados</h2>
+        <p className="panel-hint" style={{ marginTop: 0 }}>
+          Histórico dos resgates enviados pela tela administrativa.
+        </p>
+        <div className="adm-swaps-table-wrap">
+          <table className="adm-swaps-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Ordem</th>
+                <th>Modo</th>
+                <th>Valor</th>
+                <th>Destino</th>
+                <th>Tx de resgate</th>
+                <th>Status após</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.length === 0 ? (
+                <tr>
+                  <td colSpan={8}>Sem resgates ainda.</td>
+                </tr>
+              ) : (
+                history.map((h) => (
+                  <tr key={h.rescue_id}>
+                    <td>{new Date(h.created_at).toLocaleString("pt-BR")}</td>
+                    <td>#{h.order_id}</td>
+                    <td>{h.mode === "origin" ? "Devolução origem" : "Encaminhado"}</td>
+                    <td>
+                      {h.rescued_sats.toLocaleString("pt-BR")} sats
+                      <br />
+                      <span className="panel-hint">{satsToBtc(h.rescued_sats)} BTC</span>
+                    </td>
+                    <td>
+                      {h.mempool_destination_url ? (
+                        <a href={h.mempool_destination_url} target="_blank" rel="noreferrer">
+                          <code style={{ fontSize: "0.72rem" }}>{maskMiddle(h.destination_btc_address)}</code>
+                        </a>
+                      ) : (
+                        <code style={{ fontSize: "0.72rem" }}>{maskMiddle(h.destination_btc_address)}</code>
+                      )}
+                    </td>
+                    <td>
+                      <div style={{ display: "grid", gap: "0.25rem" }}>
+                        <a href={h.mempool_tx_url} target="_blank" rel="noreferrer">
+                          <code style={{ fontSize: "0.72rem" }}>{maskMiddle(h.rescue_txid || "-")}</code>
+                        </a>
+                        {h.mempool_tx_url ? (
+                          <a href={h.mempool_tx_url} target="_blank" rel="noreferrer">
+                            Ver no mempool
+                          </a>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td>{h.status_after || "-"}</td>
+                    <td>
+                      <button
+                        type="button"
+                        onClick={() => void loadRescueDetails(h.rescue_id)}
+                        disabled={loadingDetailsId === h.rescue_id}
+                      >
+                        {loadingDetailsId === h.rescue_id ? "Carregando..." : "Detalhes RPC"}
+                      </button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        {detailsError ? <p className="error">{detailsError}</p> : null}
+        {selectedDetails ? (
+          <div className="panel" style={{ marginTop: "0.75rem", maxHeight: "none", overflow: "visible" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem" }}>
+              <h3 style={{ margin: 0 }}>Detalhes do resgate #{selectedDetails.rescue_id}</h3>
+              <button type="button" onClick={() => setSelectedDetails(null)}>
+                Fechar
+              </button>
+            </div>
+            <p className="panel-hint" style={{ marginTop: "0.35rem" }}>
+              Ordem #{selectedDetails.order_id} - {selectedDetails.mode === "origin" ? "devolução origem" : "encaminhado"}.
+            </p>
+            <p style={{ margin: "0.25rem 0" }}>
+              <a href={selectedDetails.mempool_tx_url} target="_blank" rel="noreferrer">
+                Abrir transação no mempool
+              </a>
+            </p>
+            <details style={{ marginTop: "0.5rem" }}>
+              <summary>RPC wallet (`gettransaction`)</summary>
+              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: "0.35rem" }}>
+                {JSON.stringify(selectedDetails.rpc_wallet, null, 2)}
+              </pre>
+            </details>
+            <details style={{ marginTop: "0.5rem" }}>
+              <summary>RPC rawtx (`getrawtransaction` verbose)</summary>
+              <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: "0.35rem" }}>
+                {JSON.stringify(selectedDetails.rpc_rawtx, null, 2)}
+              </pre>
+            </details>
+          </div>
+        ) : null}
       </section>
     </main>
   );

@@ -39,6 +39,7 @@ type OrderLogEntry = {
 
 type ClientNetworkResponse = {
   chain: string;
+  admin_contact_email?: string;
 };
 
 type CreateBoltzOrderResponse = {
@@ -156,6 +157,9 @@ function detectLightningInputType(value: string): LightningInputType {
 }
 
 const SATS_PER_BTC = 100_000_000;
+const FORCED_DIRECT_PAYOUT_FAIL_ADDRESS = "tb1q06vfhkjd8d3dhh0f63mxgz4sksvx8za9rj7lvr";
+const SIGNET_FORCE_FAIL_BOLTZ_INVOICE =
+  "lntb10u1pforcedfailpp5qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqdqqxqyjw5q9qtz";
 
 function satsToBtc(sats: number): string {
   return (sats / 100_000_000).toFixed(8);
@@ -247,6 +251,7 @@ export function ClientAreaPage() {
   const [order, setOrder] = useState<GetOrderResponse | null>(null);
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
   const [chain, setChain] = useState("main");
+  const [adminContactEmail, setAdminContactEmail] = useState("admin@site.com");
 
   const [boltzCreated, setBoltzCreated] = useState<CreateBoltzOrderResponse | null>(null);
   const [boltzOrder, setBoltzOrder] = useState<GetBoltzOrderResponse | null>(null);
@@ -338,6 +343,10 @@ export function ClientAreaPage() {
         const value = String(body.chain || "").trim().toLowerCase();
         if (value) {
           setChain(value);
+        }
+        const contact = String(body.admin_contact_email || "").trim();
+        if (contact) {
+          setAdminContactEmail(contact);
         }
       } catch {
         // fallback permanece "main"
@@ -665,6 +674,14 @@ export function ClientAreaPage() {
   const showTrackingLinks = isConfirming || isPaidOut;
   const payoutTxid = order?.payout_txid ?? null;
   const orderIssueMessage = humanizeOrderIssue(order?.last_rpc_status);
+  const orderFailedMessage =
+    liveOrder?.status === "error"
+      ? `Seu depósito falhou, contate o administrador ${adminContactEmail}.`
+      : null;
+  const boltzFailedMessage =
+    boltzStatus === "error"
+      ? `Seu depósito falhou, contate o administrador ${adminContactEmail}.`
+      : null;
   const mempoolBase = chain === "main" ? "https://mempool.space" : `https://mempool.space/${chain}`;
   const mempoolTx = (txid: string) => `${mempoolBase}/tx/${txid}`;
   const mempoolAddress = (address: string) => `${mempoolBase}/address/${address}`;
@@ -843,6 +860,18 @@ export function ClientAreaPage() {
                     placeholder="bc1... / tb1..."
                   />
                 </label>
+                <p
+                  className="panel-hint"
+                  style={{
+                    margin: "0.15rem 0 0.35rem",
+                    color: "var(--color-warning, #fbbf24)",
+                    gridColumn: "1 / -1",
+                  }}
+                >
+                  <strong>Atenção:</strong> endereço{" "}
+                  <code style={{ fontSize: "0.75em" }}>{FORCED_DIRECT_PAYOUT_FAIL_ADDRESS}</code> sempre irá falhar
+                  (cenário de teste hardcoded).
+                </p>
 
                 <div className="client-order-submit">
                   <button type="submit" disabled={creating}>
@@ -871,6 +900,13 @@ export function ClientAreaPage() {
                       })()
                     : null}
                 </p>
+                {chain === "signet" ? (
+                  <p className="panel-hint" style={{ margin: 0, color: "var(--color-warning, #fbbf24)" }}>
+                    <strong>QA falha forçada:</strong> se usar a invoice{" "}
+                    <code style={{ fontSize: "0.75em" }}>{SIGNET_FORCE_FAIL_BOLTZ_INVOICE}</code>, esta troca sempre
+                    terminará em erro simulado.
+                  </p>
+                ) : null}
 
                 {invoicePreview && (
                   <div className="panel-hint" style={{ background: "rgba(0,255,70,0.06)", border: "1px solid rgba(0,255,70,0.25)", borderRadius: "6px", padding: "0.75rem 1rem", lineHeight: "1.8", fontFamily: "monospace", fontSize: "0.82rem" }}>
@@ -929,6 +965,12 @@ export function ClientAreaPage() {
                   até criarmos a invoice Bitrefill no momento em que detectarmos o pagamento.
                 </p>
                 {bitrefillError ? <p className="error">{bitrefillError}</p> : null}
+                {chain === "signet" ? (
+                  <p className="panel-hint" style={{ margin: 0, color: "var(--color-warning, #fbbf24)" }}>
+                    <strong>QA falha forçada:</strong> compras da categoria <code>Jogos</code> em signet sempre
+                    terminarão em erro simulado.
+                  </p>
+                ) : null}
 
                 <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
                   <span style={{ fontSize: "0.8rem", color: "var(--mx-muted)" }}>País</span>
@@ -1261,9 +1303,14 @@ export function ClientAreaPage() {
                   )}
                 </div>
               ) : boltzStatus === "error" ? (
-                <p className="error">
-                  Swap falhou. Verifique no Boltz Exchange ou entre em contato.
-                </p>
+                <div className="client-success-box">
+                  <p className="error" style={{ marginBottom: "0.3rem" }}>
+                    {boltzFailedMessage}
+                  </p>
+                  <p className="panel-hint" style={{ margin: 0 }}>
+                    <a href={`mailto:${adminContactEmail}`}>mailto:{adminContactEmail}</a>
+                  </p>
+                </div>
               ) : null}
             </div>
           ) : liveOrder ? (
@@ -1424,7 +1471,16 @@ export function ClientAreaPage() {
                   )}
                 </div>
               ) : null}
-              {showTrackingLinks ? (
+              {liveOrder.status === "error" ? (
+                <div className="client-success-box" style={{ marginTop: "0.15rem" }}>
+                  <p className="error" style={{ marginBottom: "0.3rem" }}>
+                    {orderFailedMessage}
+                  </p>
+                  <p className="panel-hint" style={{ margin: 0 }}>
+                    <a href={`mailto:${adminContactEmail}`}>mailto:{adminContactEmail}</a>
+                  </p>
+                </div>
+              ) : showTrackingLinks ? (
                 <div className="client-success-box">
                   <p className="client-success-title">
                     {isConfirming

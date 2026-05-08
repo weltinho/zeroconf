@@ -372,6 +372,7 @@ async def get_order_logs(order_id: int, session: AsyncSession = Depends(get_sess
 
 class ClientNetworkResponse(BaseModel):
     chain: str
+    admin_contact_email: str
 
 
 @router.get("/network", response_model=ClientNetworkResponse)
@@ -386,5 +387,8 @@ async def get_client_network() -> Any:
     except Exception:
         # Best effort: fallback para config local se RPC estiver indisponível.
         pass
-    return ClientNetworkResponse(chain=chain)
+    return ClientNetworkResponse(
+        chain=chain,
+        admin_contact_email=(settings.admin_contact_email or "admin@site.com").strip() or "admin@site.com",
+    )
 

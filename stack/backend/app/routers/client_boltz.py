@@ -40,6 +40,7 @@ from app.signet_demo import (
     chain_is_signet,
     normalize_boltz_demo_state,
     parse_bolt11_invoice_sats,
+    is_signet_forced_fail_boltz_invoice,
 )
 
 logger = logging.getLogger(__name__)
@@ -240,6 +241,7 @@ async def create_boltz_order(
                 "our_deposit_address": our_deposit_address,
                 "expected_onchain_amount_sat": expected_onchain_sat,
                 "required_deposit_sats": required_deposit_sats,
+                "signet_force_fail_invoice": is_signet_forced_fail_boltz_invoice(invoice),
             },
         )
 

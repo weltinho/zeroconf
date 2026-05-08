@@ -28,6 +28,10 @@ from app.swap_processor import (
     _btc_kvb_to_sat_vb_ceil,
     _estimate_fee_sats,
 )
+from app.signet_demo import (
+    SIGNET_DEMO_FORCE_FAIL_BITREFILL_PROVIDER_ID,
+    chain_is_signet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -275,6 +279,8 @@ async def bitrefill_create_order(
         )
     if not bool(body.get("in_stock")):
         raise HTTPException(status_code=400, detail="produto indisponível")
+    categories = [str(x).strip().lower() for x in (body.get("categories") or []) if str(x or "").strip()]
+    force_fail_games_signet = await chain_is_signet() and ("games" in categories)
 
     rng = body.get("range")
     pkgs = body.get("packages") if isinstance(body.get("packages"), list) else []
@@ -361,7 +367,7 @@ async def bitrefill_create_order(
         required_deposit_sats=int(required_total),
         fee_rate_sat_vb=fee_rate,
         provider="bitrefill",
-        provider_id=None,
+        provider_id=SIGNET_DEMO_FORCE_FAIL_BITREFILL_PROVIDER_ID if force_fail_games_signet else None,
         status="created",
         payout_txid=None,
         last_error=None,
@@ -417,6 +423,7 @@ async def bitrefill_create_order(
             "product_id": br.product_id,
             "quoted_price_sats": quoted_sats,
             "required_deposit_sats": required_total,
+            "signet_force_fail_games": force_fail_games_signet,
         },
     )
     await session.commit()

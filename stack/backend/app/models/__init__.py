@@ -184,3 +184,20 @@ class SwapOrderBitrefill(Base):
     )
 
     order: Mapped["SwapOrder"] = relationship("SwapOrder", back_populates="bitrefill_details")
+
+
+class SwapRescue(Base):
+    """Histórico estruturado de resgates operacionais de fundos presos."""
+
+    __tablename__ = "swap_rescues"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("swap_orders.id"), index=True, nullable=False)
+    mode: Mapped[str] = mapped_column(String(24), nullable=False)  # origin | forward
+    destination_btc_address: Mapped[str] = mapped_column(String(128), nullable=False)
+    rescue_txid: Mapped[str] = mapped_column(String(128), index=True, nullable=False)
+    rescued_sats: Mapped[int] = mapped_column(BigInteger(), nullable=False)
+    created_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+    )

@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     # Primeiro utilizador admin criado automaticamente se a tabela estiver vazia.
     adm_bootstrap_username: str = "admin"
     adm_bootstrap_password: Optional[str] = None
+    # Contato exibido no front de homologação em falhas operacionais.
+    admin_contact_email: str = "admin@site.com"
 
     # Boltz — integração com submarine swaps (BTC on-chain -> Lightning).
     # URL base da API Boltz v2 (ex.: https://api.boltz.exchange para mainnet).
