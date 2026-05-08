@@ -7,6 +7,9 @@ import { getUiText } from "../i18n";
 import { Combobox, type ComboboxOption, getCountryFlag, getCategoryIcon } from "../components/Combobox";
 import { ProgressSteps } from "../components/ProgressSteps";
 import { DropdownMenu } from "../components/DropdownMenu";
+import { CopyToastContainer, useCopyWithToast } from "../components/CopyToast";
+import { AnimatedNumber } from "../components/AnimatedNumber";
+import { PulsingQRCode } from "../components/PulsingQRCode";
 import { USE_MOCKS, MOCK_COUNTRIES, MOCK_CATEGORIES, getMockProducts } from "../mocks/catalogMocks";
 import { USE_ORDER_MOCKS, useMockOrders } from "../mocks/orderMocks";
 
@@ -244,6 +247,7 @@ export function ClientAreaPage() {
   const params = useParams<{ orderId?: string }>();
   const navigate = useNavigate();
   const t = useMemo(() => getUiText(), []);
+  const copyWithToast = useCopyWithToast();
 
   const [amount, setAmount] = useState("1000");
   const [unit, setUnit] = useState<"sats" | "btc">("sats");
@@ -1366,32 +1370,36 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                   border: "1px solid var(--border)"
                 }}>
                   <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
-                    {/* QR Code */}
+                    {/* QR Code com pulso */}
                     <div style={{ flexShrink: 0 }}>
-                      <AddressQRCode value={clientDepositAddress} size={120} />
+                      <PulsingQRCode 
+                        value={clientDepositAddress} 
+                        size={120} 
+                        isWaiting={boltzAwaitingUserDeposit}
+                        isDetected={!boltzAwaitingUserDeposit}
+                      />
                     </div>
                     
                     {/* Detalhes */}
                     <div style={{ flex: 1, minWidth: "200px" }}>
-                      {/* Valor */}
+                      {/* Valor com animação */}
                       <div style={{ marginBottom: "0.75rem" }}>
                         <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.25rem" }}>
                           {boltzAwaitingUserDeposit ? "Valor a depositar" : "Valor depositado"}
                         </span>
                         <div className="client-inline-copy" style={{ margin: 0 }}>
-                          <span style={{ 
-                            fontSize: "1.125rem", 
-                            fontWeight: 700, 
-                            color: "var(--bitcoin)",
-                            fontFamily: "'JetBrains Mono', monospace"
-                          }}>
-                            {boltzExpectedBtc} BTC
+                          <span className="btc-value-highlight">
+                            <AnimatedNumber 
+                              value={boltzExpectedSat ? boltzExpectedSat / 100_000_000 : 0} 
+                              decimals={8}
+                              suffix=" BTC"
+                            />
                           </span>
                           <button
                             type="button"
                             className="copy-icon-button"
                             aria-label="Copiar valor"
-                            onClick={() => navigator.clipboard.writeText(boltzExpectedBtc ?? "")}
+                            onClick={() => copyWithToast(boltzExpectedBtc ?? "", "Valor copiado!")}
                           >
                             ⧉
                           </button>
@@ -1416,7 +1424,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                             type="button"
                             className="copy-icon-button"
                             aria-label="Copiar endereço"
-                            onClick={() => navigator.clipboard.writeText(clientDepositAddress)}
+                            onClick={() => copyWithToast(clientDepositAddress, "Endereço copiado!")}
                           >
                             ⧉
                           </button>
@@ -1532,7 +1540,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                           type="button"
                           className="copy-icon-button"
                           aria-label="Copiar preimage"
-                          onClick={() => navigator.clipboard.writeText(boltzPreimage)}
+                          onClick={() => copyWithToast(boltzPreimage ?? "", "Preimage copiado!")}
                         >
                           ⧉
                         </button>
@@ -1598,7 +1606,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                   className="copy-icon-button"
                   aria-label="Copiar valor"
                   title="Copiar valor"
-                  onClick={() => navigator.clipboard.writeText(requiredBtc ?? "")}
+                  onClick={() => copyWithToast(requiredBtc ?? "", "Valor copiado!")}
                   disabled={!requiredBtc}
                 >
                   ⧉
@@ -1622,13 +1630,18 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                   className="copy-icon-button"
                   aria-label="Copiar endereço"
                   title="Copiar endereço"
-                  onClick={() => navigator.clipboard.writeText(liveOrder.deposit_btc_address)}
+                  onClick={() => copyWithToast(liveOrder.deposit_btc_address, "Endereço copiado!")}
                 >
                   ⧉
                 </button>
               </div>
               <div style={{ margin: "0.75rem 0" }}>
-                <AddressQRCode value={liveOrder.deposit_btc_address} size={160} />
+                <PulsingQRCode 
+                  value={liveOrder.deposit_btc_address} 
+                  size={160} 
+                  isWaiting={orderAwaitingUserDeposit}
+                  isDetected={orderDepositSeenByBackend}
+                />
               </div>
               {isBitrefillOrder && liveOrder.bitrefill_gift_card_line ? (
                 <div className="client-success-box" style={{ marginBottom: "0.75rem" }}>
@@ -1642,7 +1655,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                       className="copy-icon-button"
                       aria-label="Copiar dados do gift card"
                       title="Copiar"
-                      onClick={() => navigator.clipboard.writeText(liveOrder.bitrefill_gift_card_line ?? "")}
+                      onClick={() => copyWithToast(liveOrder.bitrefill_gift_card_line ?? "", "Codigo copiado!")}
                     >
                       ⧉
                     </button>
@@ -1744,6 +1757,9 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
           ) : null}
         </section>
       </div>
+      
+      {/* Toast container para feedback de cópia */}
+      <CopyToastContainer />
     </main>
   );
 }
