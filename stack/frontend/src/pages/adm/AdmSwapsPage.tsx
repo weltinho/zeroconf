@@ -5,6 +5,7 @@ import { formatDateTimeSaoPauloCompact } from "../../utils/datetime";
 
 type OrderRow = {
   order_id: number;
+  provider: string;
   status: string;
   output_sats: number;
   required_deposit_sats: number;
@@ -44,6 +45,14 @@ function mempoolTx(chain: string, txid: string): string {
 
 function mempoolAddress(chain: string, address: string): string {
   return `${mempoolBase(chain)}/address/${address}`;
+}
+
+function providerLabel(provider: string): string {
+  const p = String(provider || "").trim().toLowerCase();
+  if (p === "boltz") return "Swap Lightning (Boltz)";
+  if (p === "bitrefill") return "Compras (Bitrefill)";
+  if (p === "internal") return "Envio on-chain";
+  return p || "-";
 }
 
 export function AdmSwapsPage() {
@@ -209,6 +218,7 @@ export function AdmSwapsPage() {
                 <thead>
                   <tr>
                     <th>Order</th>
+                    <th>Tipo de troca</th>
                     <th>Status</th>
                     <th>Output BTC</th>
                     <th>Required BTC</th>
@@ -223,6 +233,7 @@ export function AdmSwapsPage() {
                   {filteredOrders.map((o) => (
                     <tr key={o.order_id}>
                       <td>{o.order_id}</td>
+                      <td>{providerLabel(o.provider)}</td>
                       <td>{o.status}</td>
                       <td>{satsToBtc(o.output_sats)}</td>
                       <td>{satsToBtc(o.required_deposit_sats)}</td>
@@ -279,7 +290,7 @@ export function AdmSwapsPage() {
                   ))}
                   {!filteredOrders.length ? (
                     <tr>
-                      <td colSpan={9}>Sem resultados para os filtros atuais.</td>
+                      <td colSpan={10}>Sem resultados para os filtros atuais.</td>
                     </tr>
                   ) : null}
                 </tbody>

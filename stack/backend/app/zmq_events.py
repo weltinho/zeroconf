@@ -32,6 +32,10 @@ class ZmqEventRelay:
         self._pending_hashtx_tasks: set[asyncio.Task[None]] = set()
         # Callbacks internas (ex.: processadores de domínio) para hashtx relevante.
         self._hashtx_listeners: set[callable[[str], "asyncio.Future[None]"]] = set()
+        # Sinais simples de observabilidade do relay.
+        self._running = False
+        self._last_event_at_epoch: float | None = None
+        self._last_event_topic: str | None = None
 
     async def start(self) -> None:
         # Evita iniciar duas vezes e respeita feature flag.
@@ -48,6 +52,7 @@ class ZmqEventRelay:
         self._socket = socket
         # Inicia loop de leitura assíncrono sem bloquear startup da API.
         self._task = asyncio.create_task(self._run())
+        self._running = True
 
     async def stop(self) -> None:
         # Cancela task de consumo do ZMQ com tratamento de cancelamento esperado.
@@ -56,6 +61,7 @@ class ZmqEventRelay:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
             self._task = None
+        self._running = False
 
         # Fecha socket imediatamente (linger=0 evita esperar flush pendente).
         if self._socket:
@@ -108,6 +114,8 @@ class ZmqEventRelay:
         while True:
             frames = await self._socket.recv_multipart()
             raw = self._to_event(frames)
+            self._last_event_at_epoch = time.time()
+            self._last_event_topic = str(raw.get("topic") or "") or None
             if raw.get("topic") == "hashtx" and settings.zmq_filter_wallet_txs_only:
                 if len(self._pending_hashtx_tasks) >= settings.zmq_wallet_filter_max_pending:
                     # Proteção anti-burst: descarta excesso para não acumular backlog infinito.
@@ -118,6 +126,15 @@ class ZmqEventRelay:
                 continue
             event = self._shape_for_operator(raw)
             await self._broadcast(event)
+
+    def status_snapshot(self) -> dict[str, Any]:
+        return {
+            "running": self._running,
+            "connected_subscriber": self._socket is not None and self._running,
+            "last_event_at_epoch": self._last_event_at_epoch,
+            "last_event_topic": self._last_event_topic,
+            "clients_count": len(self._clients),
+        }
 
     async def _handle_hashtx(self, raw: dict[str, Any]) -> None:
         txid = self._extract_txid(raw)

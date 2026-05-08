@@ -68,6 +68,7 @@ async def list_orders(
     return [
         {
             "order_id": r.id,
+            "provider": r.provider,
             "status": r.status,
             "output_sats": r.output_sats,
             "required_deposit_sats": r.required_deposit_sats,

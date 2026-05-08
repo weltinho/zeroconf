@@ -9,6 +9,7 @@ import { DropdownMenu } from "../components/DropdownMenu";
 import { CopyToastContainer, useCopyWithToast } from "../components/CopyToast";
 import { AnimatedNumber } from "../components/AnimatedNumber";
 import { PulsingQRCode } from "../components/PulsingQRCode";
+import { formatDateTimeSaoPaulo } from "../utils/datetime";
 
 type CreateOrderResponse = {
   order_id: number;
@@ -257,6 +258,7 @@ export function ClientAreaPage() {
   const [created, setCreated] = useState<CreateOrderResponse | null>(null);
   const [order, setOrder] = useState<GetOrderResponse | null>(null);
   const [depositTxid, setDepositTxid] = useState<string | null>(null);
+  const [orderLogs, setOrderLogs] = useState<OrderLogEntry[]>([]);
   const [chain, setChain] = useState("main");
   const [adminContactEmail, setAdminContactEmail] = useState("admin@site.com");
 
@@ -309,6 +311,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
           const logsResp = await fetch(apiUrl(`/client/orders/${orderId}/logs`));
           if (logsResp.ok) {
             const logs = (await logsResp.json()) as OrderLogEntry[];
+            setOrderLogs(logs);
             const matched = [...logs]
               .reverse()
               .find((l) => l.stage === "handle_hashtx.match_order" && l.details_json);
@@ -494,6 +497,15 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
         const body = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(body?.detail ?? `HTTP ${r.status}`);
         setBoltzOrder(body as GetBoltzOrderResponse);
+        try {
+          const logsResp = await fetch(apiUrl(`/client/orders/${orderId}/logs`));
+          if (logsResp.ok) {
+            const logs = (await logsResp.json()) as OrderLogEntry[];
+            setOrderLogs(logs);
+          }
+        } catch {
+          // logs são complemento visual
+        }
         const status = String((body as GetBoltzOrderResponse).status || "");
         if (!["paid_out", "error"].includes(status)) {
           pollTimerRef.current = window.setTimeout(() => void pollBoltzOrder(orderId), 5000);
@@ -512,6 +524,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
     setCreated(null);
     setOrder(null);
     setDepositTxid(null);
+    setOrderLogs([]);
     setBoltzCreated(null);
     setBoltzOrder(null);
     setInvoice("");
@@ -703,6 +716,63 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
   }, [liveBoltz, liveOrder, boltzStatus]);
 
   const isOrderError = liveOrder?.status === "error" || boltzStatus === "error";
+  const isOrderConcluded =
+    boltzStatus === "paid_out" || liveOrder?.status === "paid_out";
+
+  const timeline = useMemo(() => {
+    const logs = [...orderLogs].sort(
+      (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+    );
+    const firstAt = logs[0]?.created_at || null;
+    const findAt = (pred: (l: OrderLogEntry) => boolean) =>
+      logs.find(pred)?.created_at || null;
+    const depositAt = findAt((l) =>
+      l.stage === "handle_hashtx.match_order" ||
+      l.stage === "_try_payout_order.deposit_detected" ||
+      l.stage === "signet.demo.deposit",
+    );
+    const payoutBroadcastAt = findAt((l) => l.stage === "_try_payout_order.broadcasted");
+    const confirmingAt = findAt((l) =>
+      l.stage === "_try_payout_order.broadcasted" ||
+      (l.stage === "signet.demo.progress" && String(l.message || "").includes("confirming")),
+    );
+    const concludedAt = findAt((l) =>
+      l.stage === "order.confirmed" ||
+      (l.stage === "signet.demo.progress" && String(l.message || "").includes("paid_out")) ||
+      l.stage.startsWith("boltz.poll.transaction.claim"),
+    );
+    return [
+      { label: "Criado", at: firstAt },
+      { label: "Depósito detectado", at: depositAt },
+      { label: "Payout broadcast", at: payoutBroadcastAt },
+      { label: "Confirmando", at: confirmingAt },
+      { label: "Concluído", at: concludedAt || (isOrderConcluded ? new Date().toISOString() : null) },
+    ];
+  }, [orderLogs, isOrderConcluded]);
+
+  const providerStatusMessage = useMemo(() => {
+    if (liveBoltz) {
+      if (boltzStatus === "provider_processing") {
+        return "Pagamento enviado, aguardando processamento do provedor (Boltz).";
+      }
+      if (boltzStatus === "paid_out") {
+        return "Troca concluída com sucesso na Boltz.";
+      }
+      return null;
+    }
+    if (isBitrefillOrder) {
+      if (liveOrder?.status === "provider_processing") {
+        return "Pagamento enviado, aguardando processamento do provedor (Bitrefill).";
+      }
+      if (liveOrder?.status === "confirming") {
+        return "Pagamento enviado ao provedor; aguardando confirmação on-chain.";
+      }
+      if (liveOrder?.status === "paid_out") {
+        return "Compra concluída com sucesso no provedor.";
+      }
+    }
+    return null;
+  }, [liveBoltz, boltzStatus, isBitrefillOrder, liveOrder?.status]);
 
   // Preview ao vivo — extrai sats da invoice BOLT11.
   const invoiceSats = useMemo(() => parseBolt11Sats(invoice), [invoice]);
@@ -851,19 +921,24 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
           )}
         </div>
         {formLocked && (
-          <DropdownMenu
-            items={[
-              {
-                label: "Nova operacao",
-                onClick: resetToNewOrder,
-                icon: (
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                    <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
-                  </svg>
-                ),
-              },
-            ]}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+            <span className="badge" style={{ borderColor: "var(--border-accent)", color: "var(--accent)" }}>
+              Ordem ativa #{activeOrderId} · somente leitura
+            </span>
+            <DropdownMenu
+              items={[
+                {
+                  label: "Nova operacao",
+                  onClick: resetToNewOrder,
+                  icon: (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                      <path d="M8 3V13M3 8H13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                    </svg>
+                  ),
+                },
+              ]}
+            />
+          </div>
         )}
       </div>
 
@@ -1438,6 +1513,9 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
                   <code>transaction.claim.pending</code> é apenas técnico intermediário da Boltz.
                 </p>
               )}
+              {providerStatusMessage ? (
+                <p className="panel-hint">{providerStatusMessage}</p>
+              ) : null}
 
               {boltzStatus === "paid_out" ? (
                 <div className="client-success-box">
@@ -1577,6 +1655,7 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
                   isDetected={!!orderDepositSeenByBackend}
                 />
               </div>
+              {providerStatusMessage ? <p className="panel-hint">{providerStatusMessage}</p> : null}
               {isBitrefillOrder && liveOrder.bitrefill_gift_card_line ? (
                 <div className="client-success-box" style={{ marginBottom: "0.75rem" }}>
                   <p className="client-success-title">Gift card</p>
@@ -1687,6 +1766,19 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>([]);
               ) : (
                 <p className="panel-hint">Status atual: {liveOrder.status}</p>
               )}
+            </div>
+          ) : null}
+          {(liveOrder || liveBoltz) ? (
+            <div style={{ marginTop: "0.75rem" }}>
+              <h3 style={{ margin: 0, fontSize: "0.95rem" }}>Timeline da ordem (BRT)</h3>
+              <div style={{ display: "grid", gap: "0.2rem", marginTop: "0.35rem" }}>
+                {timeline.map((step) => (
+                  <p key={step.label} className="panel-hint" style={{ margin: 0 }}>
+                    <strong>{step.label}:</strong>{" "}
+                    {step.at ? formatDateTimeSaoPaulo(step.at) : "aguardando"}
+                  </p>
+                ))}
+              </div>
             </div>
           ) : null}
         </section>

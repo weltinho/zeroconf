@@ -55,6 +55,21 @@ type RelayEvent = {
 
 const ZMQ_TOPICS_UI = ["hashblock", "hashtx"] as const;
 
+type NodeHealthSummary = {
+  rpc: { ok: boolean; latency_ms: number | null; error: string | null };
+  zmq: { connected: boolean; last_event_at_epoch: number | null; last_event_topic: string | null };
+  chain: { network: string | null; blocks: number | null; headers: number | null; lag: number | null };
+  mempool: { size: number | null; mempoolminfee: number | null };
+  wallet: { configured: boolean; loaded: boolean; name: string | null; error: string | null };
+  workers: Record<string, boolean>;
+};
+
+type NodeDiagnostic = {
+  ok: boolean;
+  checks: Array<{ name: string; ok: boolean; detail: unknown; suggestion: string | null }>;
+  summary: NodeHealthSummary;
+};
+
 export function NodeToolsPage() {
   const t = useMemo(() => getUiText(), []);
   const [chain, setChain] = useState<ChainSummary | null>(null);
@@ -65,6 +80,9 @@ export function NodeToolsPage() {
   const [wsStatus, setWsStatus] = useState<"disconnected" | "connecting" | "connected">(
     "disconnected"
   );
+  const [healthSummary, setHealthSummary] = useState<NodeHealthSummary | null>(null);
+  const [diagnostic, setDiagnostic] = useState<NodeDiagnostic | null>(null);
+  const [diagLoading, setDiagLoading] = useState(false);
   const [events, setEvents] = useState<RelayEvent[]>([]);
   const [topicFilter, setTopicFilter] = useState<"all" | (typeof ZMQ_TOPICS_UI)[number]>("all");
   const wsRef = useRef<WebSocket | null>(null);
@@ -91,6 +109,10 @@ export function NodeToolsPage() {
       }
       setChain(await c.json());
       setWallet(await w.json());
+      const hs = await fetch(apiUrl("/adm/node/health-summary"), { credentials: "include" });
+      if (hs.ok) {
+        setHealthSummary((await hs.json()) as NodeHealthSummary);
+      }
       ok = true;
     } catch (e) {
       // Mantém último snapshot em tela para não "apagar" o painel em falhas transitórias.
@@ -226,6 +248,26 @@ export function NodeToolsPage() {
     void loadDashboard();
   }
 
+  async function runDiagnostic() {
+    setDiagLoading(true);
+    try {
+      const r = await fetch(apiUrl("/adm/node/diagnostic"), {
+        method: "POST",
+        credentials: "include",
+      });
+      const b = (await r.json().catch(() => ({}))) as NodeDiagnostic | { detail?: string };
+      if (!r.ok) {
+        throw new Error((b as { detail?: string }).detail || `HTTP ${r.status}`);
+      }
+      setDiagnostic(b as NodeDiagnostic);
+      setHealthSummary((b as NodeDiagnostic).summary);
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : "Falha no diagnóstico");
+    } finally {
+      setDiagLoading(false);
+    }
+  }
+
   return (
     <main className="layout">
       <nav className="page-nav" aria-label="Navigation">
@@ -252,6 +294,38 @@ export function NodeToolsPage() {
       </header>
 
       <div className="workspace">
+        <section className="panel panel-rpc adm-soft-panel" style={{ maxHeight: "none", overflow: "visible" }}>
+          <h2>Saúde do Node</h2>
+          <div className="adm-toolbar" style={{ marginBottom: "0.65rem" }}>
+            <span className={`status ${healthSummary?.rpc?.ok ? "connected" : "disconnected"}`}>
+              RPC {healthSummary?.rpc?.ok ? "OK" : "ERRO"}
+            </span>
+            <span className={`status ${healthSummary?.zmq?.connected ? "connected" : "disconnected"}`}>
+              ZMQ {healthSummary?.zmq?.connected ? "Conectado" : "Desconectado"}
+            </span>
+            <span className={`status ${healthSummary?.wallet?.loaded ? "connected" : "disconnected"}`}>
+              Wallet {healthSummary?.wallet?.loaded ? "Loaded" : "Não carregada"}
+            </span>
+            <span className={`status ${healthSummary?.workers?.deposit_watcher ? "connected" : "disconnected"}`}>
+              deposit_watcher
+            </span>
+            <span className={`status ${healthSummary?.workers?.boltz_poller ? "connected" : "disconnected"}`}>
+              boltz_poller
+            </span>
+            <button type="button" onClick={() => void runDiagnostic()} disabled={diagLoading}>
+              {diagLoading ? "Executando..." : "Diagnóstico 1-clique"}
+            </button>
+          </div>
+          <p className="panel-hint" style={{ marginTop: 0 }}>
+            RPC latency: {healthSummary?.rpc?.latency_ms ?? "-"} ms · chain lag: {healthSummary?.chain?.lag ?? "-"} · mempool size: {healthSummary?.mempool?.size ?? "-"} · minfee: {String(healthSummary?.mempool?.mempoolminfee ?? "-")}
+          </p>
+          {diagnostic ? (
+            <pre className="panel-pre rpc-response-pre">{JSON.stringify(diagnostic, null, 2)}</pre>
+          ) : (
+            <pre className="panel-pre rpc-response-pre">{JSON.stringify(healthSummary, null, 2)}</pre>
+          )}
+        </section>
+
         <section className="panel panel-rpc node-wallet-panel">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>{t.nodeChainHeading}</h2>

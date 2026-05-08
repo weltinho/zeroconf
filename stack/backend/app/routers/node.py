@@ -5,13 +5,14 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping
 from decimal import Decimal
+import time
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from app.bitcoin_rpc import BitcoinRpcError
-from app.deps import rpc
+from app.deps import rpc, zmq_relay
 from app.routers.auth_adm import get_adm_user
 from app.settings import settings
 
@@ -217,6 +218,134 @@ async def node_wallet(_user: dict = Depends(get_adm_user)) -> dict[str, Any]:
     out["addresses"] = addresses
     out["unspent_by_address"] = unspent_by_address
     return out
+
+
+@router.get("/health-summary")
+async def node_health_summary(
+    request: Request,
+    _user: dict = Depends(get_adm_user),
+) -> dict[str, Any]:
+    out: dict[str, Any] = {
+        "rpc": {"ok": False, "latency_ms": None, "error": None},
+        "zmq": {"connected": False, "last_event_at_epoch": None, "last_event_topic": None},
+        "chain": {"network": None, "blocks": None, "headers": None, "lag": None},
+        "mempool": {"size": None, "mempoolminfee": None},
+        "wallet": {"configured": False, "loaded": False, "name": None, "error": None},
+        "workers": request.app.state.worker_status if hasattr(request.app.state, "worker_status") else {},
+    }
+
+    t0 = time.perf_counter()
+    try:
+        chain = await rpc.call("getblockchaininfo")
+        out["rpc"]["ok"] = True
+        out["rpc"]["latency_ms"] = int((time.perf_counter() - t0) * 1000)
+    except Exception as exc:
+        out["rpc"]["ok"] = False
+        out["rpc"]["latency_ms"] = int((time.perf_counter() - t0) * 1000)
+        out["rpc"]["error"] = str(exc)[:512]
+        chain = None
+
+    zmq = zmq_relay.status_snapshot()
+    out["zmq"]["connected"] = bool(zmq.get("connected_subscriber"))
+    out["zmq"]["last_event_at_epoch"] = zmq.get("last_event_at_epoch")
+    out["zmq"]["last_event_topic"] = zmq.get("last_event_topic")
+
+    if isinstance(chain, Mapping):
+        blocks = int(chain.get("blocks") or 0)
+        headers = int(chain.get("headers") or 0)
+        out["chain"] = {
+            "network": chain.get("chain"),
+            "blocks": blocks,
+            "headers": headers,
+            "lag": max(headers - blocks, 0),
+        }
+    try:
+        mp = await rpc.call("getmempoolinfo")
+        if isinstance(mp, Mapping):
+            out["mempool"]["size"] = mp.get("size")
+            out["mempool"]["mempoolminfee"] = mp.get("mempoolminfee")
+    except Exception:
+        pass
+
+    wallet_name = _wallet_name()
+    out["wallet"]["name"] = wallet_name
+    out["wallet"]["configured"] = wallet_name is not None
+    if wallet_name:
+        try:
+            await _ensure_wallet_loaded(wallet_name)
+            await rpc.call("getwalletinfo", wallet=wallet_name)
+            out["wallet"]["loaded"] = True
+        except Exception as exc:
+            out["wallet"]["loaded"] = False
+            out["wallet"]["error"] = str(exc)[:512]
+
+    return out
+
+
+@router.post("/diagnostic")
+async def node_diagnostic(
+    request: Request,
+    _user: dict = Depends(get_adm_user),
+) -> dict[str, Any]:
+    summary = await node_health_summary(request, _user)
+    checks: list[dict[str, Any]] = []
+
+    rpc_ok = bool(summary.get("rpc", {}).get("ok"))
+    checks.append(
+        {
+            "name": "RPC",
+            "ok": rpc_ok,
+            "detail": summary.get("rpc"),
+            "suggestion": None if rpc_ok else "Verifique bitcoind ligado, credenciais RPC e conectividade de rede.",
+        }
+    )
+
+    zmq_ok = bool(summary.get("zmq", {}).get("connected"))
+    checks.append(
+        {
+            "name": "ZMQ",
+            "ok": zmq_ok,
+            "detail": summary.get("zmq"),
+            "suggestion": None if zmq_ok else "Verifique zmqpub* no bitcoin.conf e BITCOIN_ZMQ_PORT/endpoint.",
+        }
+    )
+
+    lag = int(summary.get("chain", {}).get("lag") or 0)
+    lag_ok = lag <= 2
+    checks.append(
+        {
+            "name": "Chain Sync",
+            "ok": lag_ok,
+            "detail": summary.get("chain"),
+            "suggestion": None if lag_ok else "Node atrasado em headers; aguarde sync ou investigue IBD/rede/disco.",
+        }
+    )
+
+    wallet_loaded = bool(summary.get("wallet", {}).get("loaded"))
+    checks.append(
+        {
+            "name": "Wallet",
+            "ok": wallet_loaded,
+            "detail": summary.get("wallet"),
+            "suggestion": None if wallet_loaded else "Confirme BITCOIN_OPERATOR_WALLET e estado de load/create da carteira.",
+        }
+    )
+
+    workers = summary.get("workers", {}) if isinstance(summary.get("workers"), Mapping) else {}
+    dw = bool(workers.get("deposit_watcher"))
+    bp = bool(workers.get("boltz_poller")) or not settings.boltz_enabled
+    workers_ok = dw and bp
+    checks.append(
+        {
+            "name": "Workers",
+            "ok": workers_ok,
+            "detail": workers,
+            "suggestion": None if workers_ok else "Reinicie backend e valide logs do deposit_watcher/boltz_poller.",
+        }
+    )
+
+    ok = all(bool(c.get("ok")) for c in checks)
+    return {"ok": ok, "checks": checks, "summary": summary}
 
 
 class AdminWithdrawPreviewRequest(BaseModel):

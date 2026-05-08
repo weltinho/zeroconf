@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    app.state.worker_status = {
+        "deposit_watcher": False,
+        "boltz_poller": False,
+    }
     app.state.db_ok = False
     try:
         from app.bootstrap_adm import bootstrap_admin_if_empty
@@ -78,8 +82,10 @@ async def lifespan(app: FastAPI):
     from app.deposit_watcher import run_deposit_watcher
 
     deposit_watch_task = asyncio.create_task(run_deposit_watcher(processor))
+    app.state.worker_status["deposit_watcher"] = True
 
     def _deposit_watcher_done(t: asyncio.Task[None]) -> None:
+        app.state.worker_status["deposit_watcher"] = False
         try:
             t.result()
         except asyncio.CancelledError:
@@ -95,8 +101,10 @@ async def lifespan(app: FastAPI):
         from app.boltz_poller import run_boltz_poller
 
         boltz_poll_task = asyncio.create_task(run_boltz_poller())
+        app.state.worker_status["boltz_poller"] = True
 
         def _boltz_poller_done(t: asyncio.Task[None]) -> None:
+            app.state.worker_status["boltz_poller"] = False
             try:
                 t.result()
             except asyncio.CancelledError:
@@ -114,12 +122,14 @@ async def lifespan(app: FastAPI):
             await boltz_poll_task
         except asyncio.CancelledError:
             pass
+        app.state.worker_status["boltz_poller"] = False
 
     deposit_watch_task.cancel()
     try:
         await deposit_watch_task
     except asyncio.CancelledError:
         pass
+    app.state.worker_status["deposit_watcher"] = False
 
     await zmq_relay.stop()
     await rpc.aclose()
