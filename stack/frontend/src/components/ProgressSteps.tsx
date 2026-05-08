@@ -40,8 +40,15 @@ function ErrorIcon() {
   );
 }
 
+function CelebrationIcon() {
+  return <span style={{ fontSize: "1rem", lineHeight: 1 }}>🎉</span>;
+}
+
 export function ProgressSteps({ steps, currentStepKey, isError = false }: ProgressStepsProps) {
   const currentIndex = steps.findIndex((s) => s.key === currentStepKey);
+  
+  // Detecta se é o último step (sucesso final)
+  const isFinalSuccess = currentIndex === steps.length - 1 && !isError;
   
   // Filtra para mostrar apenas: anterior (se houver), atual, próximo (se houver)
   const visibleSteps = steps
@@ -69,10 +76,10 @@ export function ProgressSteps({ steps, currentStepKey, isError = false }: Progre
 
         let statusClass = "pending";
         if (isCompleted) statusClass = "completed";
-        if (isCurrent && !isError) statusClass = "current";
+        if (isCurrent && !isError) statusClass = isFinalSuccess ? "success" : "current";
         if (isCurrent && isError) statusClass = "error";
 
-        const isLast = visibleIndex === visibleSteps.length - 1;
+        const isLastVisible = visibleIndex === visibleSteps.length - 1;
 
         return (
           <div key={step.key} className={`progress-step-h ${statusClass}`}>
@@ -81,6 +88,8 @@ export function ProgressSteps({ steps, currentStepKey, isError = false }: Progre
                 <CheckIcon />
               ) : isCurrent && isError ? (
                 <ErrorIcon />
+              ) : isCurrent && isFinalSuccess ? (
+                <CelebrationIcon />
               ) : isCurrent ? (
                 <LoadingIcon />
               ) : (
@@ -88,9 +97,7 @@ export function ProgressSteps({ steps, currentStepKey, isError = false }: Progre
               )}
             </div>
             <span className="progress-step-h-label">{step.label}</span>
-            {!isLast && !hasHiddenAfter && <div className="progress-step-h-line" />}
-            {!isLast && hasHiddenAfter && visibleIndex === visibleSteps.length - 2 && <div className="progress-step-h-line" />}
-            {isLast && !hasHiddenAfter ? null : isLast ? null : <div className="progress-step-h-line" />}
+            {!isLastVisible && <div className="progress-step-h-line" />}
           </div>
         );
       })}

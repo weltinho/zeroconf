@@ -1710,6 +1710,26 @@ pre {
   color: var(--error);
 }
 
+.progress-step-h.success .progress-step-h-icon {
+  background: linear-gradient(135deg, rgba(0, 255, 70, 0.2) 0%, rgba(247, 147, 26, 0.2) 100%);
+  border: 2px solid var(--accent);
+  animation: success-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes success-pulse {
+  0%, 100% { 
+    box-shadow: 0 0 0 0 rgba(0, 255, 70, 0.4);
+  }
+  50% { 
+    box-shadow: 0 0 0 6px rgba(0, 255, 70, 0);
+  }
+}
+
+.progress-step-h.success .progress-step-h-label {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .progress-step-h-number {
   font-size: 0.625rem;
 }
