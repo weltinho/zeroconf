@@ -38,6 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/client/bitrefill", tags=["client-bitrefill"])
 
 DEFAULT_CATALOG_COUNTRY = "BR"
+BITREFILL_EXTRA_SPREAD_SATS = 1000
 
 # Por linha: slug devolvido ao frontend, label PT, ``product_type`` (query ``type`` na Bitrefill), ``category`` (CSV).
 # Ver https://docs.bitrefill.com/docs/searching-products — gift cards usam ``type=gift_card``, não ``category``.
@@ -376,7 +377,10 @@ async def bitrefill_create_order(
     else:
         raise HTTPException(status_code=400, detail="produto sem pacotes nem range reconhecível")
 
-    spread = 0
+    # Mantemos o spread configurável e adicionamos um colchão fixo extra de 1000 sats
+    # para proteger oscilações entre o quote e a emissão da invoice do provedor.
+    spread_base = max(int(getattr(settings, "bitrefill_spread_sat", 0) or 0), 0)
+    spread = spread_base + BITREFILL_EXTRA_SPREAD_SATS
 
     fee_rate = DEFAULT_SWAP_FEE_RATE_SAT_VB
     try:
