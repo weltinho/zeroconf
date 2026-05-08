@@ -335,7 +335,8 @@ async def bitrefill_create_order(
     else:
         raise HTTPException(status_code=400, detail="produto sem pacotes nem range reconhecível")
 
-    spread = max(0, int(settings.bitrefill_spread_sat))
+    # Regra operacional: sempre cobrar ao menos 1000 sats de taxa de serviço no depósito do cliente.
+    spread = max(1000, int(settings.bitrefill_spread_sat))
     buffer_vol = max(12_500, int(quoted_sats * 4 // 100))
 
     fee_rate = DEFAULT_SWAP_FEE_RATE_SAT_VB
