@@ -111,11 +111,21 @@ export function AdmFundsRescuePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await r.json().catch(() => ({}))) as RescueRunResponse & { detail?: string };
-      if (!r.ok) {
-        throw new Error(String(body.detail || `HTTP ${r.status}`));
+      const rawText = await r.text();
+      let body: (RescueRunResponse & { detail?: string }) | null = null;
+      try {
+        body = rawText ? (JSON.parse(rawText) as RescueRunResponse & { detail?: string }) : null;
+      } catch {
+        body = null;
       }
-      setLastRescueResponse(body);
+      if (!r.ok) {
+        const detail =
+          (body && typeof body === "object" && "detail" in body ? String(body.detail || "") : "") ||
+          rawText ||
+          `HTTP ${r.status}`;
+        throw new Error(detail);
+      }
+      setLastRescueResponse((body || { ok: true, order_id: orderId, rescue_txid: "-", destination_btc_address: "-" }) as RescueRunResponse);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao executar resgate");

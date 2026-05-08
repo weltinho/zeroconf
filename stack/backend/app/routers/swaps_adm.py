@@ -282,85 +282,92 @@ async def rescue_stuck_payment(
     wallet = settings.bitcoin_operator_wallet.strip()
     if not wallet:
         raise HTTPException(status_code=503, detail="operator wallet not configured")
-    await _ensure_wallet_loaded(wallet)
-    fee_index0 = await _ensure_fee_address_index0(wallet)
-    if order.deposit_btc_address.strip() == fee_index0:
-        raise HTTPException(status_code=400, detail="fee-index-0 cannot be rescued from this screen")
-
-    unspent = await rpc.call("listunspent", [0, 9999999, [order.deposit_btc_address], True], wallet=wallet)
-    if not isinstance(unspent, list):
-        raise HTTPException(status_code=502, detail="listunspent invalid response")
-
-    order_utxos: list[dict[str, Any]] = []
-    total_sats = 0
-    for u in unspent:
-        if not isinstance(u, dict):
-            continue
-        if str(u.get("address") or "") != order.deposit_btc_address:
-            continue
-        if not u.get("spendable", True):
-            continue
-        txid = str(u.get("txid") or "").strip()
-        vout = u.get("vout")
-        amount = u.get("amount")
-        if not txid or not isinstance(vout, int):
-            continue
-        sats = int((Decimal(str(amount or 0)) * Decimal(100_000_000)).to_integral_value())
-        if sats <= 0:
-            continue
-        order_utxos.append({"txid": txid, "vout": vout})
-        total_sats += sats
-    if not order_utxos or total_sats <= 0:
-        raise HTTPException(status_code=400, detail="no spendable UTXOs on deposit address")
-
-    if req.mode != "forward":
-        raise HTTPException(status_code=422, detail="mode must be forward")
-    destination = str(req.destination_btc_address or "").strip()
-    if not destination:
-        raise HTTPException(status_code=422, detail="destination_btc_address is required")
-
-    change_address = await _ensure_fee_address_index0(wallet)
-    # Refund integral: o destino recebe 100% dos sats da ordem.
-    # A taxa é paga por um UTXO do fee-index-0 e o troco volta ao próprio fee-index-0.
-    fee_unspent = await rpc.call("listunspent", [0, 9999999, [change_address], True], wallet=wallet)
-    if not isinstance(fee_unspent, list):
-        raise HTTPException(status_code=502, detail="listunspent invalid response for fee-index-0")
-    fee_candidates: list[tuple[int, dict[str, Any]]] = []
-    for u in fee_unspent:
-        if not isinstance(u, dict):
-            continue
-        if str(u.get("address") or "") != change_address:
-            continue
-        if not u.get("spendable", True):
-            continue
-        txid = str(u.get("txid") or "").strip()
-        vout = u.get("vout")
-        amount = u.get("amount")
-        if not txid or not isinstance(vout, int):
-            continue
-        try:
-            sats = int((Decimal(str(amount or 0)) * Decimal(100_000_000)).to_integral_value())
-        except Exception:
-            sats = 0
-        if sats <= 0:
-            continue
-        fee_candidates.append((sats, {"txid": txid, "vout": vout}))
-    if not fee_candidates:
-        raise HTTPException(
-            status_code=400,
-            detail="fee-index-0 has no spendable UTXO to fund rescue transaction fee",
-        )
-    fee_candidates.sort(key=lambda x: x[0], reverse=True)
-    fee_input = fee_candidates[0][1]
-
-    outputs = {destination: _sats_to_btc_str(total_sats)}
-    options: dict[str, Any] = {
-        "replaceable": False,
-        "lockUnspents": True,
-        "changeAddress": change_address,
-        "add_inputs": False,
-    }
+    rpc_step = "init"
     try:
+        rpc_step = "ensure_wallet_loaded"
+        await _ensure_wallet_loaded(wallet)
+        rpc_step = "ensure_fee_address_index0"
+        fee_index0 = await _ensure_fee_address_index0(wallet)
+        if order.deposit_btc_address.strip() == fee_index0:
+            raise HTTPException(status_code=400, detail="fee-index-0 cannot be rescued from this screen")
+
+        rpc_step = "listunspent_order_address"
+        unspent = await rpc.call("listunspent", [0, 9999999, [order.deposit_btc_address], True], wallet=wallet)
+        if not isinstance(unspent, list):
+            raise HTTPException(status_code=502, detail="listunspent invalid response")
+
+        order_utxos: list[dict[str, Any]] = []
+        total_sats = 0
+        for u in unspent:
+            if not isinstance(u, dict):
+                continue
+            if str(u.get("address") or "") != order.deposit_btc_address:
+                continue
+            if not u.get("spendable", True):
+                continue
+            txid = str(u.get("txid") or "").strip()
+            vout = u.get("vout")
+            amount = u.get("amount")
+            if not txid or not isinstance(vout, int):
+                continue
+            sats = int((Decimal(str(amount or 0)) * Decimal(100_000_000)).to_integral_value())
+            if sats <= 0:
+                continue
+            order_utxos.append({"txid": txid, "vout": vout})
+            total_sats += sats
+        if not order_utxos or total_sats <= 0:
+            raise HTTPException(status_code=400, detail="no spendable UTXOs on deposit address")
+
+        if req.mode != "forward":
+            raise HTTPException(status_code=422, detail="mode must be forward")
+        destination = str(req.destination_btc_address or "").strip()
+        if not destination:
+            raise HTTPException(status_code=422, detail="destination_btc_address is required")
+
+        rpc_step = "ensure_fee_address_index0_again"
+        change_address = await _ensure_fee_address_index0(wallet)
+        # Refund integral: o destino recebe 100% dos sats da ordem.
+        # A taxa é paga por um UTXO do fee-index-0 e o troco volta ao próprio fee-index-0.
+        rpc_step = "listunspent_fee_index0"
+        fee_unspent = await rpc.call("listunspent", [0, 9999999, [change_address], True], wallet=wallet)
+        if not isinstance(fee_unspent, list):
+            raise HTTPException(status_code=502, detail="listunspent invalid response for fee-index-0")
+        fee_candidates: list[tuple[int, dict[str, Any]]] = []
+        for u in fee_unspent:
+            if not isinstance(u, dict):
+                continue
+            if str(u.get("address") or "") != change_address:
+                continue
+            if not u.get("spendable", True):
+                continue
+            txid = str(u.get("txid") or "").strip()
+            vout = u.get("vout")
+            amount = u.get("amount")
+            if not txid or not isinstance(vout, int):
+                continue
+            try:
+                sats = int((Decimal(str(amount or 0)) * Decimal(100_000_000)).to_integral_value())
+            except Exception:
+                sats = 0
+            if sats <= 0:
+                continue
+            fee_candidates.append((sats, {"txid": txid, "vout": vout}))
+        if not fee_candidates:
+            raise HTTPException(
+                status_code=400,
+                detail="fee-index-0 has no spendable UTXO to fund rescue transaction fee",
+            )
+        fee_candidates.sort(key=lambda x: x[0], reverse=True)
+        fee_input = fee_candidates[0][1]
+
+        outputs = {destination: _sats_to_btc_str(total_sats)}
+        options: dict[str, Any] = {
+            "replaceable": False,
+            "lockUnspents": True,
+            "changeAddress": change_address,
+            "add_inputs": False,
+        }
+        rpc_step = "walletcreatefundedpsbt"
         funded = await rpc.call(
             "walletcreatefundedpsbt",
             [order_utxos + [fee_input], outputs, 0, options],
@@ -368,18 +375,21 @@ async def rescue_stuck_payment(
         )
         if not isinstance(funded, dict) or not isinstance(funded.get("psbt"), str):
             raise HTTPException(status_code=502, detail="walletcreatefundedpsbt invalid response")
+        rpc_step = "walletprocesspsbt"
         processed = await rpc.call("walletprocesspsbt", [funded["psbt"]], wallet=wallet)
         if not isinstance(processed, dict) or not isinstance(processed.get("psbt"), str):
             raise HTTPException(status_code=502, detail="walletprocesspsbt invalid response")
+        rpc_step = "finalizepsbt"
         finalized = await rpc.call("finalizepsbt", [processed["psbt"]], wallet=wallet)
         if not isinstance(finalized, dict) or not finalized.get("complete") or not isinstance(finalized.get("hex"), str):
             raise HTTPException(status_code=502, detail="finalizepsbt incomplete response")
+        rpc_step = "sendrawtransaction"
         send_result = await rpc.call("sendrawtransaction", [finalized["hex"]], wallet=wallet)
     except HTTPException:
         raise
     except Exception as exc:
         # Devolve erro real para operação (evita "internal server error" genérico no front).
-        raise HTTPException(status_code=502, detail=f"rescue broadcast failed: {exc}") from exc
+        raise HTTPException(status_code=502, detail=f"rescue failed at {rpc_step}: {exc}") from exc
 
     rescue_txid = str(send_result)
     order.status = "paid_out"
