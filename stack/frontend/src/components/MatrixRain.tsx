@@ -64,8 +64,8 @@ export function MatrixRain() {
     }
 
     function draw() {
-      // Borrão bem leve - limpa mais rápido
-      ctx.fillStyle = "rgba(0, 0, 0, 0.4)";
+      // Limpa quase completamente - rastro mínimo
+      ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
