@@ -1,335 +1,519 @@
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 import { Link } from "react-router-dom";
-import { apiUrl } from "../api/url";
-import { getUiText } from "../i18n";
+import { CryptoBackground } from "../components/CryptoBackground";
+import { AppLogo } from "../components/AppLogo";
 
-function ServerIcon({ className }: { className?: string }) {
+function SwapIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
-      <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
-      <line x1="6" y1="6" x2="6.01" y2="6"/>
-      <line x1="6" y1="18" x2="6.01" y2="18"/>
+      <path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/>
     </svg>
   );
 }
 
-function ArrowRightIcon({ className }: { className?: string }) {
+function BitcoinIcon({ className }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="5" y1="12" x2="19" y2="12"/>
-      <polyline points="12 5 19 12 12 19"/>
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1.41 16.09V20h-1.65v-1.93c-1.14-.12-2.2-.52-2.87-.98l.5-1.84c.73.47 1.72.92 2.84.92.99 0 1.57-.41 1.57-1.03 0-.58-.49-.94-1.59-1.27-1.56-.47-2.84-1.13-2.84-2.77 0-1.33.96-2.39 2.58-2.7V6.5h1.65v1.89c.95.12 1.72.39 2.27.67l-.47 1.77c-.5-.26-1.27-.59-2.24-.59-.99 0-1.38.47-1.38.94 0 .53.55.81 1.82 1.23 1.73.56 2.63 1.33 2.63 2.85 0 1.32-.94 2.49-2.82 2.83z"/>
     </svg>
   );
 }
 
-function LayersIcon({ className }: { className?: string }) {
+function LightningIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M11 21h-1l1-7H7.5c-.58 0-.57-.32-.38-.66l.1-.16L12 3h1l-1 7h3.5c.49 0 .56.33.47.51l-.07.15L11 21z"/>
+    </svg>
+  );
+}
+
+function SettingsIcon({ className }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polygon points="12 2 2 7 12 12 22 7 12 2"/>
-      <polyline points="2 17 12 22 22 17"/>
-      <polyline points="2 12 12 17 22 12"/>
+      <circle cx="12" cy="12" r="3"/>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
     </svg>
   );
 }
 
 export function HomePage() {
-  const t = useMemo(() => getUiText(), []);
-  const [chain, setChain] = useState("main");
+  const [sendAmount, setSendAmount] = useState("0.01");
+  const [receiveAmount, setReceiveAmount] = useState("1000000");
+  const [destinationAddress, setDestinationAddress] = useState("");
 
-  useEffect(() => {
-    let active = true;
-    async function loadNetwork() {
-      try {
-        const r = await fetch(apiUrl("/client/network"));
-        const b = (await r.json().catch(() => ({}))) as { chain?: string };
-        if (!active || !r.ok) return;
-        const value = String(b.chain || "").trim().toLowerCase();
-        if (value) setChain(value);
-      } catch {
-        // fallback para "main" se API indisponivel
-      }
-    }
-    void loadNetwork();
-    return () => { active = false; };
-  }, []);
-
-  const chainLabel = chain.toUpperCase();
+  // Simulated conversion (1 BTC = 100M sats for demo)
+  const handleSendChange = (value: string) => {
+    setSendAmount(value);
+    const btc = parseFloat(value) || 0;
+    setReceiveAmount(Math.floor(btc * 100000000).toString());
+  };
 
   return (
-    <main className="layout layout-home">
-      {/* Hero Section */}
-      <section className="home-hero">
-        <div className="home-hero-content">
-          <h1 className="home-hero-title">{t.homeTitle}</h1>
-          <p className="home-hero-subtitle">{t.homeSubtitle}</p>
-
-          <ul className="home-hero-bullets">
-            <li>{t.matrixHeroBullet1}</li>
-            <li>{t.matrixHeroBullet2}</li>
-          </ul>
-
-          <div className="home-network-status">
-            <span className="home-network-dot" />
-            <span>{t.matrixNetStatus.replace("Bitcoin Signet", `Bitcoin ${chainLabel}`)}</span>
+    <div className="swap-page">
+      <CryptoBackground />
+      
+      <div className="swap-container">
+        {/* Header */}
+        <header className="swap-header">
+          <div className="swap-header-brand">
+            <AppLogo height={32} />
           </div>
-        </div>
-      </section>
+          <nav className="swap-header-nav">
+            <Link to="/adm" className="swap-admin-link" title="Painel Administrativo">
+              <SettingsIcon className="swap-admin-icon" />
+            </Link>
+          </nav>
+        </header>
 
-      {/* Cards */}
-      <section className="home-cards">
-        <Link to="/adm/node" className="home-card">
-          <div className="home-card-icon-wrap">
-            <ServerIcon className="home-card-icon" />
-          </div>
-          <div className="home-card-content">
-            <h2>{t.cardToolsTitle}</h2>
-            <p>{t.cardToolsDesc}</p>
-          </div>
-          <ArrowRightIcon className="home-card-arrow" />
-        </Link>
+        {/* Main Content */}
+        <main className="swap-main">
+          <h1 className="swap-title">Liquidez Bitcoin Instantânea</h1>
+          <p className="swap-subtitle">Converta entre on-chain e Lightning Network sem custódia</p>
 
-        <div className="home-card home-card-roadmap">
-          <div className="home-card-icon-wrap">
-            <LayersIcon className="home-card-icon" />
-          </div>
-          <div className="home-card-content">
-            <span className="home-card-badge">Em desenvolvimento</span>
-            <h2>{t.cardRoadmapTitle}</h2>
-            <p>{t.cardRoadmapDesc}</p>
-          </div>
-        </div>
-      </section>
+          {/* Swap Card */}
+          <div className="swap-card">
+            {/* Send */}
+            <div className="swap-field">
+              <label className="swap-field-label">Enviar</label>
+              <div className="swap-field-row">
+                <input
+                  type="text"
+                  className="swap-input"
+                  value={sendAmount}
+                  onChange={(e) => handleSendChange(e.target.value)}
+                  placeholder="0.00"
+                />
+                <div className="swap-currency">
+                  <BitcoinIcon className="swap-currency-icon swap-currency-icon-btc" />
+                  <span>BTC</span>
+                  <span className="swap-currency-badge">on-chain</span>
+                </div>
+              </div>
+            </div>
 
-      {/* Footer */}
-      <footer className="home-footer">
-        <p>{t.clientFooterOperators}</p>
-        <p className="home-footer-locale">{t.localeFixedBr}</p>
-      </footer>
+            {/* Swap Direction */}
+            <div className="swap-divider">
+              <button className="swap-direction-btn" type="button">
+                <SwapIcon className="swap-direction-icon" />
+              </button>
+            </div>
+
+            {/* Receive */}
+            <div className="swap-field">
+              <label className="swap-field-label">Receber</label>
+              <div className="swap-field-row">
+                <input
+                  type="text"
+                  className="swap-input"
+                  value={receiveAmount}
+                  readOnly
+                  placeholder="0"
+                />
+                <div className="swap-currency">
+                  <LightningIcon className="swap-currency-icon swap-currency-icon-ln" />
+                  <span>sats</span>
+                  <span className="swap-currency-badge swap-currency-badge-ln">Lightning</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Destination */}
+            <div className="swap-field swap-field-destination">
+              <label className="swap-field-label">Destino</label>
+              <input
+                type="text"
+                className="swap-input swap-input-full"
+                value={destinationAddress}
+                onChange={(e) => setDestinationAddress(e.target.value)}
+                placeholder="Invoice Lightning ou endereço Bitcoin..."
+              />
+            </div>
+
+            {/* Rate Info */}
+            <div className="swap-rate">
+              <span>Taxa de rede estimada</span>
+              <span className="swap-rate-value">~500 sats</span>
+            </div>
+
+            {/* Action Button */}
+            <button className="swap-btn" type="button">
+              Iniciar Troca
+            </button>
+
+            {/* Trust Indicators */}
+            <div className="swap-trust">
+              <div className="swap-trust-item">
+                <span className="swap-trust-dot" />
+                <span>Auto-custódia</span>
+              </div>
+              <div className="swap-trust-item">
+                <span className="swap-trust-dot" />
+                <span>Zero confirmações</span>
+              </div>
+              <div className="swap-trust-item">
+                <span className="swap-trust-dot" />
+                <span>Auditável</span>
+              </div>
+            </div>
+          </div>
+        </main>
+
+        {/* Footer */}
+        <footer className="swap-footer">
+          <p>Infraestrutura Bitcoin para operadores</p>
+        </footer>
+      </div>
 
       <style>{`
-        .layout-home {
-          display: flex;
-          flex-direction: column;
-          gap: 1.5rem;
-        }
-
-        /* Hero */
-        .home-hero {
-          padding: 2.5rem 2rem;
-          border: 1px solid var(--border);
-          border-radius: var(--radius-lg);
-          background: var(--background-card);
+        .swap-page {
+          min-height: 100vh;
           position: relative;
+          overflow: hidden;
         }
 
-        .home-hero::before {
-          content: '';
-          position: absolute;
-          top: 0;
-          left: 0;
-          right: 0;
-          height: 1px;
-          background: linear-gradient(90deg, transparent, var(--accent), transparent);
-          opacity: 0.3;
+        .crypto-background-canvas {
+          position: fixed;
+          inset: 0;
+          z-index: 0;
+          pointer-events: none;
         }
 
-        .home-hero-content {
-          max-width: 600px;
-        }
-
-        .home-hero-title {
-          margin: 0 0 0.75rem;
-          font-size: 1.75rem;
-          font-weight: 700;
-          color: var(--text-primary);
-          letter-spacing: -0.02em;
-        }
-
-        .home-hero-subtitle {
-          margin: 0 0 1.5rem;
-          font-size: 1rem;
-          color: var(--text-secondary);
-          line-height: 1.6;
-        }
-
-        .home-hero-bullets {
-          margin: 0 0 1.5rem;
-          padding: 0;
-          list-style: none;
+        .swap-container {
+          position: relative;
+          z-index: 1;
+          min-height: 100vh;
           display: flex;
           flex-direction: column;
-          gap: 0.5rem;
+          padding: 1rem 1.5rem;
+          max-width: 560px;
+          margin: 0 auto;
         }
 
-        .home-hero-bullets li {
-          font-size: 0.9375rem;
-          color: var(--text-muted);
-          font-family: var(--font-mono);
-          line-height: 1.5;
-        }
-
-        .home-network-status {
-          display: inline-flex;
-          align-items: center;
-          gap: 0.5rem;
-          padding: 0.5rem 0.875rem;
-          background: var(--background);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-full);
-          font-size: 0.8125rem;
-          font-family: var(--font-mono);
-          color: var(--text-secondary);
-        }
-
-        .home-network-dot {
-          width: 8px;
-          height: 8px;
-          background: var(--accent);
-          border-radius: 50%;
-          animation: pulse-dot 2s ease-in-out infinite;
-        }
-
-        @keyframes pulse-dot {
-          0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
-        }
-
-        /* Cards */
-        .home-cards {
-          display: grid;
-          gap: 1rem;
-          grid-template-columns: 1fr;
-        }
-
-        @media (min-width: 640px) {
-          .home-cards {
-            grid-template-columns: repeat(2, 1fr);
-          }
-        }
-
-        .home-card {
+        /* Header */
+        .swap-header {
           display: flex;
-          align-items: flex-start;
-          gap: 1rem;
-          padding: 1.25rem;
-          background: var(--background-card);
+          align-items: center;
+          justify-content: space-between;
+          padding: 0.5rem 0;
+          margin-bottom: 2rem;
+        }
+
+        .swap-header-brand {
+          display: flex;
+          align-items: center;
+        }
+
+        .swap-header-nav {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+        }
+
+        .swap-admin-link {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 36px;
+          height: 36px;
+          border-radius: 8px;
+          color: var(--text-muted);
+          background: rgba(255, 255, 255, 0.03);
           border: 1px solid var(--border);
-          border-radius: var(--radius-md);
-          text-decoration: none;
           transition: all 0.2s ease;
         }
 
-        .home-card:hover {
+        .swap-admin-link:hover {
+          color: var(--text-secondary);
           border-color: var(--border-accent);
-          transform: translateY(-2px);
+          background: rgba(16, 185, 129, 0.05);
         }
 
-        .home-card-icon-wrap {
+        .swap-admin-icon {
+          width: 18px;
+          height: 18px;
+        }
+
+        /* Main */
+        .swap-main {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          padding: 1rem 0;
+        }
+
+        .swap-title {
+          margin: 0 0 0.5rem;
+          font-size: clamp(1.5rem, 5vw, 2rem);
+          font-weight: 700;
+          color: var(--text-primary);
+          text-align: center;
+          letter-spacing: -0.02em;
+        }
+
+        .swap-subtitle {
+          margin: 0 0 2rem;
+          font-size: 1rem;
+          color: var(--text-secondary);
+          text-align: center;
+        }
+
+        /* Swap Card */
+        .swap-card {
+          width: 100%;
+          background: rgba(20, 27, 34, 0.85);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border: 1px solid var(--border);
+          border-radius: 16px;
+          padding: 1.5rem;
+          box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+        }
+
+        .swap-field {
+          margin-bottom: 0.75rem;
+        }
+
+        .swap-field-label {
+          display: block;
+          font-size: 0.8125rem;
+          font-weight: 500;
+          color: var(--text-muted);
+          margin-bottom: 0.5rem;
+        }
+
+        .swap-field-row {
+          display: flex;
+          align-items: center;
+          gap: 0.75rem;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 0.25rem 0.5rem 0.25rem 1rem;
+          transition: border-color 0.2s ease;
+        }
+
+        .swap-field-row:focus-within {
+          border-color: var(--accent);
+        }
+
+        .swap-input {
+          flex: 1;
+          background: transparent;
+          border: none;
+          color: var(--text-primary);
+          font-size: 1.5rem;
+          font-weight: 600;
+          padding: 0.75rem 0;
+          min-width: 0;
+        }
+
+        .swap-input:focus {
+          outline: none;
+          box-shadow: none;
+        }
+
+        .swap-input::placeholder {
+          color: var(--text-muted);
+        }
+
+        .swap-input-full {
+          width: 100%;
+          background: var(--background);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          padding: 0.875rem 1rem;
+          font-size: 0.9375rem;
+          font-weight: 400;
+        }
+
+        .swap-input-full:focus {
+          border-color: var(--accent);
+          box-shadow: 0 0 0 3px var(--accent-subtle);
+        }
+
+        .swap-currency {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.5rem 0.75rem;
+          background: var(--background-elevated);
+          border: 1px solid var(--border);
+          border-radius: 8px;
+          font-size: 0.9375rem;
+          font-weight: 600;
+          color: var(--text-primary);
+          white-space: nowrap;
+        }
+
+        .swap-currency-icon {
+          width: 20px;
+          height: 20px;
+        }
+
+        .swap-currency-icon-btc {
+          color: #f7931a;
+        }
+
+        .swap-currency-icon-ln {
+          color: #facc15;
+        }
+
+        .swap-currency-badge {
+          font-size: 0.6875rem;
+          font-weight: 500;
+          color: var(--text-muted);
+          background: var(--background);
+          padding: 0.125rem 0.375rem;
+          border-radius: 4px;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+        }
+
+        .swap-currency-badge-ln {
+          color: #facc15;
+          background: rgba(250, 204, 21, 0.1);
+        }
+
+        /* Swap Divider */
+        .swap-divider {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0.5rem 0;
+        }
+
+        .swap-direction-btn {
           display: flex;
           align-items: center;
           justify-content: center;
           width: 40px;
           height: 40px;
-          background: var(--accent-subtle);
-          border: 1px solid var(--border-accent);
-          border-radius: var(--radius-sm);
-          flex-shrink: 0;
+          background: var(--background-elevated);
+          border: 1px solid var(--border);
+          border-radius: 10px;
+          color: var(--text-secondary);
+          cursor: pointer;
+          transition: all 0.2s ease;
         }
 
-        .home-card-icon {
+        .swap-direction-btn:hover {
+          border-color: var(--accent);
+          color: var(--accent);
+          background: var(--accent-subtle);
+        }
+
+        .swap-direction-icon {
           width: 20px;
           height: 20px;
-          color: var(--accent);
         }
 
-        .home-card-content {
-          flex: 1;
-          min-width: 0;
+        /* Destination */
+        .swap-field-destination {
+          margin-top: 1rem;
         }
 
-        .home-card h2 {
-          margin: 0 0 0.375rem;
+        /* Rate */
+        .swap-rate {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 0.75rem 0;
+          margin: 0.5rem 0;
+          border-top: 1px solid var(--border);
+          border-bottom: 1px solid var(--border);
+          font-size: 0.8125rem;
+          color: var(--text-muted);
+        }
+
+        .swap-rate-value {
+          color: var(--text-secondary);
+          font-weight: 500;
+          font-family: 'JetBrains Mono', monospace;
+        }
+
+        /* Button */
+        .swap-btn {
+          width: 100%;
+          padding: 1rem;
+          margin-top: 1rem;
+          background: var(--accent);
+          color: #fff;
+          border: none;
+          border-radius: 10px;
           font-size: 1rem;
           font-weight: 600;
-          color: var(--text-primary);
+          cursor: pointer;
+          transition: all 0.2s ease;
         }
 
-        .home-card p {
-          margin: 0;
-          font-size: 0.875rem;
-          color: var(--text-secondary);
-          line-height: 1.5;
+        .swap-btn:hover {
+          background: var(--accent-dim);
+          transform: translateY(-1px);
+          box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
 
-        .home-card-arrow {
-          width: 18px;
-          height: 18px;
+        /* Trust Indicators */
+        .swap-trust {
+          display: flex;
+          justify-content: center;
+          flex-wrap: wrap;
+          gap: 1rem 1.5rem;
+          margin-top: 1.25rem;
+          padding-top: 1rem;
+        }
+
+        .swap-trust-item {
+          display: flex;
+          align-items: center;
+          gap: 0.375rem;
+          font-size: 0.75rem;
           color: var(--text-muted);
-          flex-shrink: 0;
-          transition: transform 0.2s ease;
         }
 
-        .home-card:hover .home-card-arrow {
-          transform: translateX(4px);
-          color: var(--accent);
-        }
-
-        .home-card-roadmap {
-          border-style: dashed;
-          background: var(--background-elevated);
-          cursor: default;
-        }
-
-        .home-card-roadmap:hover {
-          transform: none;
-          border-color: var(--border);
-        }
-
-        .home-card-roadmap h2 {
-          color: var(--text-secondary);
-        }
-
-        .home-card-badge {
-          display: inline-block;
-          padding: 0.1875rem 0.5rem;
-          background: var(--background);
-          border: 1px solid var(--border);
-          border-radius: var(--radius-full);
-          font-size: 0.6875rem;
-          font-weight: 600;
-          color: var(--text-muted);
-          text-transform: uppercase;
-          letter-spacing: 0.04em;
-          margin-bottom: 0.5rem;
+        .swap-trust-dot {
+          width: 6px;
+          height: 6px;
+          background: var(--accent);
+          border-radius: 50%;
         }
 
         /* Footer */
-        .home-footer {
-          display: flex;
-          flex-direction: column;
-          gap: 0.25rem;
-          padding-top: 1rem;
-          border-top: 1px solid var(--border);
+        .swap-footer {
+          padding: 1.5rem 0 0.5rem;
+          text-align: center;
         }
 
-        .home-footer p {
+        .swap-footer p {
           margin: 0;
           font-size: 0.8125rem;
           color: var(--text-muted);
         }
 
-        .home-footer-locale {
-          opacity: 0.7;
-          font-size: 0.75rem !important;
-        }
-
         @media (max-width: 480px) {
-          .home-hero {
-            padding: 1.5rem 1.25rem;
+          .swap-container {
+            padding: 0.75rem 1rem;
+          }
+
+          .swap-card {
+            padding: 1.25rem;
+          }
+
+          .swap-input {
+            font-size: 1.25rem;
+          }
+
+          .swap-currency {
+            padding: 0.375rem 0.5rem;
+            font-size: 0.875rem;
+          }
+
+          .swap-currency-badge {
+            display: none;
           }
         }
       `}</style>
-    </main>
+    </div>
   );
 }

@@ -5,6 +5,8 @@ type AppLogoProps = {
   "aria-label"?: string;
   /** `professional` — design fintech sofisticado. `matrix` — estilo terminal (legado). */
   variant?: "default" | "matrix" | "professional";
+  /** Altura em pixels. A largura é calculada proporcionalmente. */
+  height?: number;
 };
 
 /** Wordmark ZeroConf Prop — Logo profissional fintech. */
@@ -12,6 +14,7 @@ export function AppLogo({
   className,
   "aria-label": ariaLabel,
   variant = "professional",
+  height,
 }: AppLogoProps) {
   const gradientId = useId().replace(/[^a-zA-Z0-9_-]/g, "");
   const glowId = `${gradientId}-glow`;
@@ -34,6 +37,7 @@ export function AppLogo({
       viewBox="0 0 480 52"
       role="img"
       aria-label={ariaLabel}
+      style={height ? { height, width: "auto" } : undefined}
     >
       <defs>
         <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="100%">
