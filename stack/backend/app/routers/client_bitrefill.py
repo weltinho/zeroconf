@@ -335,9 +335,7 @@ async def bitrefill_create_order(
     else:
         raise HTTPException(status_code=400, detail="produto sem pacotes nem range reconhecível")
 
-    # Regra operacional: sempre cobrar ao menos 1000 sats de taxa de serviço no depósito do cliente.
-    spread = max(1000, int(settings.bitrefill_spread_sat))
-    buffer_vol = max(12_500, int(quoted_sats * 4 // 100))
+    spread = 0
 
     fee_rate = DEFAULT_SWAP_FEE_RATE_SAT_VB
     try:
@@ -359,7 +357,7 @@ async def bitrefill_create_order(
         pass
 
     fee_est = max(_estimate_fee_sats(fee_rate, num_inputs=1, num_outputs=2), MIN_SWAP_FEE_SATS)
-    required_total = quoted_sats + fee_est + spread + buffer_vol
+    required_total = quoted_sats + fee_est + spread
 
     order = SwapOrder(
         output_sats=int(quoted_sats),
@@ -423,6 +421,8 @@ async def bitrefill_create_order(
         {
             "product_id": br.product_id,
             "quoted_price_sats": quoted_sats,
+            "fee_est_sats": fee_est,
+            "spread_sats": spread,
             "required_deposit_sats": required_total,
             "signet_force_fail_games": force_fail_games_signet,
         },

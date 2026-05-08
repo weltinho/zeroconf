@@ -38,6 +38,32 @@ def _btc_to_sats(amount_btc: Any) -> int:
     return sats
 
 
+def _bitrefill_payment_to_sats(raw_price: Any) -> int:
+    """Converte `payment.price` da Bitrefill para sats.
+
+    A API pode devolver esse campo em BTC (decimal, ex.: 0.00012345)
+    ou em sats (inteiro como string/número, ex.: "12345").
+    """
+    s = str(raw_price or "").strip()
+    if not s:
+        return 0
+    try:
+        d = Decimal(s)
+    except Exception:
+        return 0
+    if d <= 0:
+        return 0
+    # Inteiro puro -> tratar como sats.
+    if s.isdigit():
+        try:
+            return int(s)
+        except Exception:
+            return 0
+    # Decimal -> tratar como BTC.
+    sats = int((d * Decimal(100_000_000)).to_integral_value(rounding="ROUND_FLOOR"))
+    return sats if sats > 0 else 0
+
+
 def _sats_to_btc_str(sats: int) -> str:
     d = (Decimal(sats) / Decimal(100_000_000)).quantize(Decimal("0.00000001"))
     # bitcoind aceita string decimal.
@@ -115,7 +141,7 @@ async def _ensure_bitrefill_invoice(
         return False
 
     addr = str(pay.get("address") or "").strip()
-    payout_sats = _btc_to_sats(pay.get("price"))
+    payout_sats = _bitrefill_payment_to_sats(pay.get("price"))
     inv_id = str(data.get("id") or "").strip()
     if not addr or payout_sats <= 0:
         order.last_error = "invoice sem payment.address / price válidos"
@@ -124,7 +150,7 @@ async def _ensure_bitrefill_invoice(
             order.id,
             "bitrefill.invoice_bad_payment",
             "payment incompleto",
-            {"invoice_id": inv_id},
+            {"invoice_id": inv_id, "payment_price_raw": pay.get("price")},
         )
         return False
 
@@ -142,6 +168,7 @@ async def _ensure_bitrefill_invoice(
             "invoice_id": inv_id,
             "payment_address": addr,
             "payment_sats": payout_sats,
+            "payment_price_raw": pay.get("price"),
         },
     )
     return True
