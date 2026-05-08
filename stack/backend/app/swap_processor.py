@@ -718,16 +718,30 @@ class SwapOrderProcessor:
             return
 
         order.payout_txid = str(payout_txid)
-        # Para ordens Boltz, salvar o txid do depósito do cliente e marcar status intermediário.
+        # Para ordens Boltz, salvar txids e marcar status Boltz intermediário.
         if order.provider == "boltz":
             order.status = "provider_processing"
-            # Salva o deposit_tx_id (cliente → nós) no registo Boltz.
-            if event_txid:
-                from sqlalchemy import select as _select
-                from app.models import SwapOrderBoltz as _SOB
-                res = await session.execute(_select(_SOB).where(_SOB.swap_order_id == order.id))
-                boltz_detail = res.scalar_one_or_none()
-                if boltz_detail:
+            from sqlalchemy import select as _select
+            from app.models import SwapOrderBoltz as _SOB
+            import json as _json
+
+            res = await session.execute(_select(_SOB).where(_SOB.swap_order_id == order.id))
+            boltz_detail = res.scalar_one_or_none()
+            if boltz_detail:
+                # O lockup para o endereço da Boltz já foi broadcastado por nós.
+                # Persistimos imediatamente transaction.mempool para evitar status_raw nulo
+                # até o próximo ciclo do poller externo.
+                boltz_detail.status_raw = "transaction.mempool"
+                boltz_detail.last_payload_json = _json.dumps(
+                    {
+                        "status": "transaction.mempool",
+                        "lockupTxId": order.payout_txid,
+                        "depositTxId": event_txid,
+                    },
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                )
+                if event_txid:
                     boltz_detail.deposit_tx_id = event_txid
         else:
             order.status = "confirming"
