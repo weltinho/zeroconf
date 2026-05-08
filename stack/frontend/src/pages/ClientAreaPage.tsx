@@ -860,18 +860,20 @@ export function ClientAreaPage() {
                     placeholder="bc1... / tb1..."
                   />
                 </label>
-                <p
-                  className="panel-hint"
-                  style={{
-                    margin: "0.15rem 0 0.35rem",
-                    color: "var(--color-warning, #fbbf24)",
-                    gridColumn: "1 / -1",
-                  }}
-                >
-                  <strong>Atenção:</strong> endereço{" "}
-                  <code style={{ fontSize: "0.75em" }}>{FORCED_DIRECT_PAYOUT_FAIL_ADDRESS}</code> sempre irá falhar
-                  (cenário de teste hardcoded).
-                </p>
+                {chain === "signet" ? (
+                  <p
+                    className="panel-hint"
+                    style={{
+                      margin: "0.15rem 0 0.35rem",
+                      color: "var(--color-warning, #fbbf24)",
+                      gridColumn: "1 / -1",
+                    }}
+                  >
+                    <strong>Atenção:</strong> endereço{" "}
+                    <code style={{ fontSize: "0.75em" }}>{FORCED_DIRECT_PAYOUT_FAIL_ADDRESS}</code> sempre irá falhar
+                    (cenário de teste hardcoded).
+                  </p>
+                ) : null}
 
                 <div className="client-order-submit">
                   <button type="submit" disabled={creating}>

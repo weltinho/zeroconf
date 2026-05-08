@@ -328,16 +328,22 @@ async def rescue_stuck_payment(
         "add_inputs": False,
         "subtractFeeFromOutputs": [0],
     }
-    funded = await rpc.call("walletcreatefundedpsbt", [utxos, outputs, 0, options], wallet=wallet)
-    if not isinstance(funded, dict) or not isinstance(funded.get("psbt"), str):
-        raise HTTPException(status_code=502, detail="walletcreatefundedpsbt invalid response")
-    processed = await rpc.call("walletprocesspsbt", [funded["psbt"]], wallet=wallet)
-    if not isinstance(processed, dict) or not isinstance(processed.get("psbt"), str):
-        raise HTTPException(status_code=502, detail="walletprocesspsbt invalid response")
-    finalized = await rpc.call("finalizepsbt", [processed["psbt"]], wallet=wallet)
-    if not isinstance(finalized, dict) or not finalized.get("complete") or not isinstance(finalized.get("hex"), str):
-        raise HTTPException(status_code=502, detail="finalizepsbt incomplete response")
-    txid = await rpc.call("sendrawtransaction", [finalized["hex"]], wallet=wallet)
+    try:
+        funded = await rpc.call("walletcreatefundedpsbt", [utxos, outputs, 0, options], wallet=wallet)
+        if not isinstance(funded, dict) or not isinstance(funded.get("psbt"), str):
+            raise HTTPException(status_code=502, detail="walletcreatefundedpsbt invalid response")
+        processed = await rpc.call("walletprocesspsbt", [funded["psbt"]], wallet=wallet)
+        if not isinstance(processed, dict) or not isinstance(processed.get("psbt"), str):
+            raise HTTPException(status_code=502, detail="walletprocesspsbt invalid response")
+        finalized = await rpc.call("finalizepsbt", [processed["psbt"]], wallet=wallet)
+        if not isinstance(finalized, dict) or not finalized.get("complete") or not isinstance(finalized.get("hex"), str):
+            raise HTTPException(status_code=502, detail="finalizepsbt incomplete response")
+        txid = await rpc.call("sendrawtransaction", [finalized["hex"]], wallet=wallet)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        # Devolve erro real para operação (evita "internal server error" genérico no front).
+        raise HTTPException(status_code=502, detail=f"rescue broadcast failed: {exc}") from exc
 
     order.status = "paid_out"
     order.payout_txid = str(txid)

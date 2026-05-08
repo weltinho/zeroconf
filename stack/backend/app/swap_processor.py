@@ -561,7 +561,8 @@ class SwapOrderProcessor:
         )
 
         if (
-            order.provider == "internal"
+            await chain_is_signet()
+            and order.provider == "internal"
             and (order.destination_btc_address or "").strip() == FORCED_DIRECT_PAYOUT_FAIL_ADDRESS
         ):
             order.status = "error"
