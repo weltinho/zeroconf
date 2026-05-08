@@ -790,29 +790,22 @@ body {
 
 .panel-rpc {
   min-height: 340px;
-  display: flex;
-  flex-direction: column;
 }
 
 .panel-rpc > h2 {
-  flex-shrink: 0;
+  margin-bottom: 0.75rem;
 }
 
-.panel-rpc > .btc-sats-toggle {
-  flex-shrink: 0;
-}
-
-.panel-rpc > form,
-.panel-rpc > div {
-  flex: 1;
+.panel-rpc form,
+.panel-rpc .client-order-form {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 220px;
 }
 
-.panel-rpc .client-order-submit,
-.panel-rpc form > div:last-child,
-.panel-rpc > div > div:last-child {
-  margin-top: auto !important;
+.panel-rpc .client-order-submit {
+  margin-top: auto;
   padding-top: 1rem;
 }
 
