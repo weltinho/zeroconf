@@ -8,10 +8,12 @@ export function MatrixRain() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const maybeCanvas = canvasRef.current;
+    if (!maybeCanvas) return;
+    const maybeCtx = maybeCanvas.getContext("2d");
+    if (!maybeCtx) return;
+    const canvas: HTMLCanvasElement = maybeCanvas;
+    const ctx: CanvasRenderingContext2D = maybeCtx;
 
     // Mais zeros e uns, poucos katakana
     const matrixChars = "0101010101010101アウカキセソ0101010101010101";
