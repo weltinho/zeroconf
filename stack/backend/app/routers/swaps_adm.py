@@ -374,15 +374,16 @@ async def rescue_stuck_payment(
         finalized = await rpc.call("finalizepsbt", [processed["psbt"]], wallet=wallet)
         if not isinstance(finalized, dict) or not finalized.get("complete") or not isinstance(finalized.get("hex"), str):
             raise HTTPException(status_code=502, detail="finalizepsbt incomplete response")
-        txid = await rpc.call("sendrawtransaction", [finalized["hex"]], wallet=wallet)
+        send_result = await rpc.call("sendrawtransaction", [finalized["hex"]], wallet=wallet)
     except HTTPException:
         raise
     except Exception as exc:
         # Devolve erro real para operação (evita "internal server error" genérico no front).
         raise HTTPException(status_code=502, detail=f"rescue broadcast failed: {exc}") from exc
 
+    rescue_txid = str(send_result)
     order.status = "paid_out"
-    order.payout_txid = str(txid)
+    order.payout_txid = rescue_txid
     order.last_error = None
     await log_swap_step(
         session,
@@ -392,8 +393,9 @@ async def rescue_stuck_payment(
         {
             "mode": req.mode,
             "destination_btc_address": destination,
-            "rescue_txid": str(txid),
+            "rescue_txid": rescue_txid,
             "rescued_sats": total_sats,
+            "rpc_send_response": send_result,
         },
     )
     session.add(
@@ -401,12 +403,18 @@ async def rescue_stuck_payment(
             order_id=order.id,
             mode=req.mode,
             destination_btc_address=destination,
-            rescue_txid=str(txid),
+            rescue_txid=rescue_txid,
             rescued_sats=total_sats,
         )
     )
     await session.commit()
-    return {"ok": True, "order_id": order.id, "rescue_txid": str(txid), "destination_btc_address": destination}
+    return {
+        "ok": True,
+        "order_id": order.id,
+        "rescue_txid": rescue_txid,
+        "destination_btc_address": destination,
+        "rpc_send_response": send_result,
+    }
 
 
 @router.get("/rescue-history")

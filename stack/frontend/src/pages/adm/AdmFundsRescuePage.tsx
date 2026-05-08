@@ -38,6 +38,14 @@ type RescueHistoryDetails = {
   rpc_rawtx: unknown;
 };
 
+type RescueRunResponse = {
+  ok: boolean;
+  order_id: number;
+  rescue_txid: string;
+  destination_btc_address: string;
+  rpc_send_response?: unknown;
+};
+
 function satsToBtc(sats: number): string {
   return (sats / 100_000_000).toFixed(8);
 }
@@ -59,6 +67,7 @@ export function AdmFundsRescuePage() {
   const [runningOrderId, setRunningOrderId] = useState<number | null>(null);
   const [selectedDetails, setSelectedDetails] = useState<RescueHistoryDetails | null>(null);
   const [loadingDetailsId, setLoadingDetailsId] = useState<number | null>(null);
+  const [lastRescueResponse, setLastRescueResponse] = useState<RescueRunResponse | null>(null);
 
   async function load() {
     setLoading(true);
@@ -93,6 +102,7 @@ export function AdmFundsRescuePage() {
   async function runRescue(orderId: number) {
     setRunningOrderId(orderId);
     setError(null);
+    setLastRescueResponse(null);
     try {
       const payload = { mode: "forward", destination_btc_address: (forwardAddrByOrder[orderId] || "").trim() };
       const r = await fetch(apiUrl(`/adm/swaps/orders/${orderId}/rescue`), {
@@ -101,10 +111,11 @@ export function AdmFundsRescuePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await r.json().catch(() => ({}))) as { detail?: string; rescue_txid?: string };
+      const body = (await r.json().catch(() => ({}))) as RescueRunResponse & { detail?: string };
       if (!r.ok) {
         throw new Error(String(body.detail || `HTTP ${r.status}`));
       }
+      setLastRescueResponse(body);
       await load();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Falha ao executar resgate");
@@ -157,6 +168,14 @@ export function AdmFundsRescuePage() {
           </span>
         </div>
         {error ? <p className="error">{error}</p> : null}
+        {lastRescueResponse ? (
+          <details style={{ marginBottom: "0.6rem" }}>
+            <summary>Última resposta do RPC de envio</summary>
+            <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", marginTop: "0.35rem" }}>
+              {JSON.stringify(lastRescueResponse, null, 2)}
+            </pre>
+          </details>
+        ) : null}
 
         <div className="adm-swaps-table-wrap">
           <table className="adm-swaps-table">
