@@ -96,12 +96,12 @@ export function AppLogo({
         x="60"
         y="46"
         fontFamily="'Inter', -apple-system, sans-serif"
-        fontSize="10"
+        fontSize="9"
         fill={tagline}
         fontWeight="500"
-        letterSpacing="0.08em"
+        letterSpacing="0.06em"
       >
-        INFRAESTRUTURA BITCOIN
+        ROTEAMENTO SEGURO DE LIQUIDEZ 1:1
       </text>
       
       {/* Status indicator dots */}

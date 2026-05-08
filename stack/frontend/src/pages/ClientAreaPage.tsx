@@ -901,12 +901,9 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
       {/* Compact Header */}
       <header className="client-page-header">
         <div className="client-page-header-main">
-          <Link to="/" style={{ display: "inline-block", marginBottom: "0.5rem" }}>
-            <AppLogo className="hero-logo" variant="matrix" aria-label={t.logoAriaLabel} style={{ height: "32px" }} />
+          <Link to="/" style={{ display: "inline-block" }}>
+            <AppLogo className="hero-logo" variant="matrix" aria-label={t.logoAriaLabel} style={{ height: "40px" }} />
           </Link>
-          <p className="client-page-subtitle" style={{ margin: 0 }}>
-            Roteamento seguro de liquidez 1:1
-          </p>
           <div className="badges" style={{ marginTop: "0.5rem" }}>
             <span className="badge">REDE: {chain.toUpperCase()}</span>
             {chain === "signet" && (
