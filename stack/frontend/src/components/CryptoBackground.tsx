@@ -16,8 +16,8 @@ export function CryptoBackground() {
     // Mais zeros e uns, poucos katakana
     const matrixChars = "0101010101010101アウカキセソ0101010101010101";
     const cryptoChars = "₿₿₿₿⚡"; // Mais Bitcoin, menos raios
-    const fontSize = 20;
-    const columnSpacing = 60;
+    const fontSize = 18;
+    const columnSpacing = 35; // Mais colunas, menos espaçamento
     
     interface Column {
       x: number;
@@ -46,7 +46,7 @@ export function CryptoBackground() {
         y: Math.random() * -300,
         speed: 4 + Math.random() * 3, // Velocidade rápida
         chars,
-        active: Math.random() > 0.5,
+        active: Math.random() > 0.2, // 80% das colunas ativas
       };
     }
 
