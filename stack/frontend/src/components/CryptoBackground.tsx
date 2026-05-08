@@ -108,8 +108,8 @@ export function CryptoBackground() {
         ctx.shadowBlur = 0;
         col.y += col.speed;
 
-        // Troca caracteres com frequência moderada (3% chance por frame)
-        if (Math.random() < 0.03) {
+        // Troca caracteres a cada frame (100%)
+        if (Math.random() < 1) {
           const idx = Math.floor(Math.random() * col.chars.length);
           const isCrypto = Math.random() < 0.30;
           col.chars[idx] = {
