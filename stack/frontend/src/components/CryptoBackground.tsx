@@ -62,8 +62,8 @@ export function CryptoBackground() {
     }
 
     function draw() {
-      ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Limpa o canvas completamente - sem borrão
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = "center";
@@ -108,8 +108,8 @@ export function CryptoBackground() {
         ctx.shadowBlur = 0;
         col.y += col.speed;
 
-        // Troca caracteres raramente (2% chance por frame)
-        if (Math.random() < 0.02) {
+        // Troca caracteres muito raramente (0.5% chance por frame)
+        if (Math.random() < 0.005) {
           const idx = Math.floor(Math.random() * col.chars.length);
           const isCrypto = Math.random() < 0.30;
           col.chars[idx] = {
@@ -129,7 +129,8 @@ export function CryptoBackground() {
 
     resize();
     window.addEventListener("resize", resize);
-    const intervalId = setInterval(draw, 33);
+    // 20fps para animação mais lenta e calma
+    const intervalId = setInterval(draw, 50);
 
     return () => {
       window.removeEventListener("resize", resize);

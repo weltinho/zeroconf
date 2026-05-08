@@ -63,9 +63,8 @@ export function MatrixRain() {
     }
 
     function draw() {
-      // Fundo com fade mais lento para trail mais longo
-      ctx.fillStyle = "rgba(0, 0, 0, 0.05)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      // Limpa o canvas completamente - sem borrão
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
 
       ctx.font = `bold ${fontSize}px monospace`;
       ctx.textAlign = "center";
@@ -116,8 +115,8 @@ export function MatrixRain() {
         // Move a coluna para baixo
         col.y += col.speed;
 
-        // Troca caracteres ocasionalmente (5% chance por frame)
-        if (Math.random() < 0.05) {
+        // Troca caracteres raramente (0.5% chance por frame)
+        if (Math.random() < 0.005) {
           const idx = Math.floor(Math.random() * col.chars.length);
           const isCrypto = Math.random() < 0.30;
           col.chars[idx] = {
@@ -139,8 +138,8 @@ export function MatrixRain() {
     resize();
     window.addEventListener("resize", resize);
 
-    // 30fps para animação mais suave mas não frenética
-    const intervalId = setInterval(draw, 33);
+    // 20fps para animação mais lenta e calma
+    const intervalId = setInterval(draw, 50);
 
     return () => {
       window.removeEventListener("resize", resize);
