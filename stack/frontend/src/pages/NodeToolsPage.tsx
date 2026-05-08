@@ -86,9 +86,12 @@ export function NodeToolsPage() {
       setWallet(await w.json());
       ok = true;
     } catch (e) {
-      setApiError(e instanceof Error ? e.message : "Erro ao carregar painel");
-      setChain(null);
-      setWallet(null);
+      // Mantém último snapshot em tela para não "apagar" o painel em falhas transitórias.
+      if (!chain && !wallet) {
+        setApiError(e instanceof Error ? e.message : "Erro ao carregar painel");
+      } else {
+        setApiError("");
+      }
     } finally {
       setLoading(false);
       refreshInFlightRef.current = false;
@@ -112,16 +115,16 @@ export function NodeToolsPage() {
       if (cancelled) {
         return;
       }
-      // Só agenda o próximo auto-refresh 5s após conclusão bem sucedida.
+      // Auto-refresh mais espaçado para reduzir carga de RPC na VPS.
       if (success) {
         timerId = window.setTimeout(() => {
           void loop();
-        }, 5000);
+        }, 10000);
       } else {
-        // Em erro, tenta novamente mais cedo para recuperação automática.
+        // Em erro, mantém cadência de 10s para não sobrecarregar o node.
         timerId = window.setTimeout(() => {
           void loop();
-        }, 1500);
+        }, 10000);
       }
     }
 
