@@ -170,7 +170,10 @@ async def create_order(
             {"error": str(exc)},
         )
         await session.commit()
-        raise HTTPException(status_code=502, detail="failed to allocate deposit address") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"failed to allocate deposit address (rpc): {str(exc)[:512]}",
+        ) from exc
 
     order.deposit_btc_address = str(addr)
     order.status = "awaiting_deposit"

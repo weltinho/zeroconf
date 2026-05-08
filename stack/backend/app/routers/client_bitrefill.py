@@ -397,7 +397,10 @@ async def bitrefill_create_order(
             {"error": str(exc)},
         )
         await session.commit()
-        raise HTTPException(status_code=502, detail="falha ao gerar endereços") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"falha ao gerar endereços (rpc): {str(exc)[:512]}",
+        ) from exc
 
     br = SwapOrderBitrefill(
         swap_order_id=order.id,

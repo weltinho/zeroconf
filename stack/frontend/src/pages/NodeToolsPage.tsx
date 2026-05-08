@@ -252,7 +252,7 @@ export function NodeToolsPage() {
       </header>
 
       <div className="workspace">
-        <section className="panel panel-rpc">
+        <section className="panel panel-rpc node-wallet-panel">
           <div className="row" style={{ justifyContent: "space-between", alignItems: "center" }}>
             <h2 style={{ margin: 0 }}>{t.nodeChainHeading}</h2>
             <form onSubmit={onRefresh}>

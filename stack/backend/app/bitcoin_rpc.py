@@ -35,7 +35,10 @@ class BitcoinRpcClient:
             "params": params or [],
         }
         # Chamada HTTP POST para endpoint RPC.
-        response = await self._client.post(self._rpc_url(wallet), json=payload)
+        try:
+            response = await self._client.post(self._rpc_url(wallet), json=payload)
+        except httpx.HTTPError as exc:
+            raise BitcoinRpcError(f"RPC transport error on {method}: {exc}") from exc
         body: Any | None = None
         try:
             body = response.json()
@@ -47,8 +50,15 @@ class BitcoinRpcClient:
         if isinstance(body, dict) and body.get("error"):
             raise BitcoinRpcError(self._format_jsonrpc_error(body["error"]))
 
-        # Sem erro JSON-RPC explícito, mantém semântica de erro HTTP.
-        response.raise_for_status()
+        # Sem erro JSON-RPC explícito, mantém semântica de erro HTTP com contexto.
+        try:
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            body_text = response.text.strip()
+            snippet = body_text[:512] if body_text else "<empty body>"
+            raise BitcoinRpcError(
+                f"RPC HTTP error on {method}: status={response.status_code}, body={snippet}"
+            ) from exc
         if not isinstance(body, dict):
             raise BitcoinRpcError("Invalid RPC response format")
         # Em sucesso, resultado real vem em "result".

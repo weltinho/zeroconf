@@ -1172,6 +1172,11 @@ pre {
   line-height: 1.5;
 }
 
+.node-wallet-panel {
+  max-height: none;
+  overflow: visible;
+}
+
 .client-inline-copy {
   display: flex;
   align-items: center;

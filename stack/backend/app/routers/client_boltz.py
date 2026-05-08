@@ -195,7 +195,10 @@ async def create_boltz_order(
             )
     except Exception as exc:
         logger.error("Failed to generate deposit address: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to generate deposit address") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate deposit address (rpc): {str(exc)[:512]}",
+        ) from exc
 
     # Signet: ordem persistida na BD sem chamar a API Boltz (LN real). GET com ``demo_state`` simula progressão.
     if await chain_is_signet():
@@ -209,7 +212,10 @@ async def create_boltz_order(
             refund_privkey_hex, refund_pubkey_hex = generate_refund_keypair()
         except Exception as exc:
             logger.error("Failed to generate refund keypair: %s", exc)
-            raise HTTPException(status_code=500, detail="Failed to generate refund keypair") from exc
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to generate refund keypair: {str(exc)[:512]}",
+            ) from exc
 
         swap_stub: dict[str, Any] = {
             "id": boltz_swap_id,
@@ -292,7 +298,10 @@ async def create_boltz_order(
         refund_privkey_hex, refund_pubkey_hex = generate_refund_keypair()
     except Exception as exc:
         logger.error("Failed to generate refund keypair: %s", exc)
-        raise HTTPException(status_code=500, detail="Failed to generate refund keypair") from exc
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate refund keypair: {str(exc)[:512]}",
+        ) from exc
 
     # 3. Criar swap na Boltz.
     try:
