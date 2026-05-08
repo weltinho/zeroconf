@@ -13,9 +13,9 @@ export function CryptoBackground() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Katakana + números estilo Matrix original
-    const matrixChars = "アイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワヲン01";
-    const cryptoChars = "₿⚡";
+    // Mais zeros e uns, poucos katakana
+    const matrixChars = "0101010101010101アウカキセソ0101010101010101";
+    const cryptoChars = "₿₿₿₿⚡"; // Mais Bitcoin, menos raios
     const fontSize = 20;
     const columnSpacing = 60;
     
