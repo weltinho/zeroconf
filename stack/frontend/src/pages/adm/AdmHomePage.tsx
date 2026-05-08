@@ -33,19 +33,6 @@ function RefreshIcon({ className }: { className?: string }) {
   );
 }
 
-function ListIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="8" y1="6" x2="21" y2="6"/>
-      <line x1="8" y1="12" x2="21" y2="12"/>
-      <line x1="8" y1="18" x2="21" y2="18"/>
-      <line x1="3" y1="6" x2="3.01" y2="6"/>
-      <line x1="3" y1="12" x2="3.01" y2="12"/>
-      <line x1="3" y1="18" x2="3.01" y2="18"/>
-    </svg>
-  );
-}
-
 export function AdmHomePage() {
   const t = useMemo(() => getUiText(), []);
   const [chain, setChain] = useState("main");
@@ -131,28 +118,6 @@ export function AdmHomePage() {
           <ArrowRightIcon className="adm-card-arrow" />
         </Link>
 
-        <div className="adm-card adm-card-stats">
-          <div className="adm-card-icon-wrap">
-            <ListIcon className="adm-card-icon" />
-          </div>
-          <div className="adm-card-content">
-            <h2>Resumo rapido</h2>
-            <div className="adm-stats-grid">
-              <div className="adm-stat">
-                <span className="adm-stat-value">-</span>
-                <span className="adm-stat-label">Blocos</span>
-              </div>
-              <div className="adm-stat">
-                <span className="adm-stat-value">-</span>
-                <span className="adm-stat-label">Mempool</span>
-              </div>
-              <div className="adm-stat">
-                <span className="adm-stat-value">-</span>
-                <span className="adm-stat-label">Swaps hoje</span>
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
       <style>{`
@@ -296,39 +261,6 @@ export function AdmHomePage() {
           transform: translateX(4px);
         }
         
-        .adm-card-stats {
-          cursor: default;
-        }
-        
-        .adm-card-stats:hover {
-          transform: none;
-          box-shadow: none;
-        }
-        
-        .adm-stats-grid {
-          display: flex;
-          gap: 1.5rem;
-          margin-top: 0.75rem;
-        }
-        
-        .adm-stat {
-          display: flex;
-          flex-direction: column;
-          gap: 0.125rem;
-        }
-        
-        .adm-stat-value {
-          font-size: 1.25rem;
-          font-weight: 600;
-          color: var(--text-primary);
-        }
-        
-        .adm-stat-label {
-          font-size: 0.75rem;
-          color: var(--text-muted);
-          text-transform: uppercase;
-          letter-spacing: 0.05em;
-        }
       `}</style>
     </main>
   );

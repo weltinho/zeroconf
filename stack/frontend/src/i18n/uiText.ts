@@ -203,7 +203,7 @@ export const UI_TEXT: Record<"en" | "pt", UiText> = {
     admErrorGeneric: "Falha no login — verifica API e base de dados.",
     admLoginFoot:
       "Senha validada no servidor (bcrypt na MariaDB); cookie de sessão é HTTP-only.",
-    admHomeTitle: "Consola administrativa",
+    admHomeTitle: "Console administrativo",
     admHomeSubtitle:
       "Ferramentas do operador. Utilizadores finais ficam na área pública.",
     admNavConsole: "INÍCIO",
