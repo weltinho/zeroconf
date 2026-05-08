@@ -159,7 +159,8 @@ export function AdmSwapsPage() {
         <span className="page-nav-sep" aria-hidden="true">
           /
         </span>
-        <span className="page-nav-current">SWAPS</span>
+        <span className="page-nav-current">TROCAS</span>
+        
       </nav>
 
       <header className="hero">
@@ -186,7 +187,7 @@ export function AdmSwapsPage() {
             className={tab === "logs" ? "button-ws-start" : ""}
             onClick={() => setTab("logs")}
           >
-            Logs de swap
+            Logs de trocas
           </button>
           <button type="button" onClick={() => void loadOrders()} disabled={loading}>
             Atualizar

@@ -195,6 +195,22 @@ function convertAmountUnit(value: string, from: "btc" | "sats", to: "btc" | "sat
   return (n / SATS_PER_BTC).toFixed(8).replace(/\.?0+$/, "");
 }
 
+function humanizeOrderIssue(raw: string | null | undefined): string | null {
+  const msg = String(raw || "").trim();
+  if (!msg) return null;
+  const low = msg.toLowerCase();
+  if (low.includes("invoice bitrefill")) {
+    return "Falha ao gerar pedido com a contraparte. Verifique os dados informados e tente novamente.";
+  }
+  if (low.includes("payout failed") || low.includes("sendrawtransaction")) {
+    return "Falha ao enviar a transação de destino.";
+  }
+  if (low.includes("underpaid") || low.includes("insufficient deposit")) {
+    return "Depósito detectado, mas o valor ainda está abaixo do necessário para concluir.";
+  }
+  return msg;
+}
+
 const BOLTZ_STEPS: { key: string; label: string }[] = [
   { key: "awaiting_deposit", label: "Aguardando depósito" },
   { key: "deposit_detected", label: "Depósito detectado" },
@@ -648,6 +664,7 @@ export function ClientAreaPage() {
   const isPaidOut = order?.status === "paid_out";
   const showTrackingLinks = isConfirming || isPaidOut;
   const payoutTxid = order?.payout_txid ?? null;
+  const orderIssueMessage = humanizeOrderIssue(order?.last_rpc_status);
   const mempoolBase = chain === "main" ? "https://mempool.space" : `https://mempool.space/${chain}`;
   const mempoolTx = (txid: string) => `${mempoolBase}/tx/${txid}`;
   const mempoolAddress = (address: string) => `${mempoolBase}/address/${address}`;
@@ -1384,16 +1401,35 @@ export function ClientAreaPage() {
                   <span className="client-highlight-value">{feeBtc} BTC</span> de taxas.
                 </p>
               )}
+              {orderDepositSeenByBackend && !showTrackingLinks ? (
+                <div className="client-success-box" style={{ marginTop: "0.15rem" }}>
+                  <p className="client-success-title">
+                    {orderIssueMessage
+                      ? "Depósito detectado. Houve falha na etapa seguinte."
+                      : "Depósito detectado. Iniciando negociação com a contraparte."}
+                  </p>
+                  {orderIssueMessage ? (
+                    <>
+                      <p className="error" style={{ margin: 0 }}>{orderIssueMessage}</p>
+                      {order?.last_rpc_status ? (
+                        <p className="panel-hint" style={{ margin: 0 }}>
+                          Detalhe técnico: {order.last_rpc_status}
+                        </p>
+                      ) : null}
+                    </>
+                  ) : (
+                    <p className="panel-hint" style={{ margin: 0 }}>
+                      Aguarde enquanto tentamos gerar o pedido e enviar a transação de destino.
+                    </p>
+                  )}
+                </div>
+              ) : null}
               {showTrackingLinks ? (
                 <div className="client-success-box">
                   <p className="client-success-title">
-                    {isBitrefillOrder
-                      ? isConfirming
-                        ? "Aguardando confirmação do envio à Bitrefill"
-                        : "Envio à Bitrefill confirmado na rede"
-                      : isConfirming
-                        ? "Aguardando confirmação da transação de payout"
-                        : "Transação de payout confirmada"}
+                    {isConfirming
+                      ? "Aguardando confirmação da transação de destino"
+                      : "Transação de destino confirmada"}
                   </p>
                   <p className="panel-hint">Acompanhe no mempool (rede {chain}):</p>
                   <ul className="client-links-list">
@@ -1407,7 +1443,7 @@ export function ClientAreaPage() {
                     {payoutTxid ? (
                       <li>
                         <a href={mempoolTx(payoutTxid)} target="_blank" rel="noreferrer">
-                          Transação de payout <span className="external-link-icon">↗</span>
+                          Transação de destino <span className="external-link-icon">↗</span>
                         </a>
                       </li>
                     ) : null}

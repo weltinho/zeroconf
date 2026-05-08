@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { PublicLayout } from "./layouts/PublicLayout";
 import { AdmGateLayout } from "./pages/adm/AdmGateLayout";
+import { AdmFundsRescuePage } from "./pages/adm/AdmFundsRescuePage";
 import { AdmHomePage } from "./pages/adm/AdmHomePage";
 import { AdmSwapsPage } from "./pages/adm/AdmSwapsPage";
 import { ClientAreaPage } from "./pages/ClientAreaPage";
@@ -32,6 +33,7 @@ export default function App() {
           <Route index element={<AdmHomePage />} />
           <Route path="node" element={<NodeToolsPage />} />
           <Route path="swaps" element={<AdmSwapsPage />} />
+          <Route path="funds-rescue" element={<AdmFundsRescuePage />} />
         </Route>
 
         <Route path="/tools/node" element={<Navigate to="/adm/node" replace />} />

@@ -68,7 +68,6 @@ async def _ensure_bitrefill_invoice(
     )
     br = row.scalar_one_or_none()
     if br is None:
-        order.status = "awaiting_deposit"
         order.last_error = "dados Bitrefill em falta (swap_order_bitrefill)"
         await log_swap_step(
             session,
@@ -100,19 +99,16 @@ async def _ensure_bitrefill_invoice(
     try:
         inv = await bitrefill_create_invoice(body)
     except BitrefillClientError as exc:
-        order.status = "awaiting_deposit"
         order.last_error = f"invoice Bitrefill: {exc}"
         await log_swap_step(session, order.id, "bitrefill.invoice_error", str(exc), {})
         return False
 
     data = inv.get("data") if isinstance(inv, dict) else None
     if not isinstance(data, dict):
-        order.status = "awaiting_deposit"
         order.last_error = "resposta invoice inválida (sem data)"
         return False
     pay = data.get("payment")
     if not isinstance(pay, dict):
-        order.status = "awaiting_deposit"
         order.last_error = "invoice sem objeto payment"
         return False
 
@@ -120,7 +116,6 @@ async def _ensure_bitrefill_invoice(
     payout_sats = _btc_to_sats(pay.get("price"))
     inv_id = str(data.get("id") or "").strip()
     if not addr or payout_sats <= 0:
-        order.status = "awaiting_deposit"
         order.last_error = "invoice sem payment.address / price válidos"
         await log_swap_step(
             session,
@@ -392,7 +387,14 @@ class SwapOrderProcessor:
                     select(SwapOrder)
                     .where(
                         SwapOrder.deposit_btc_address == addr,
-                        SwapOrder.status.in_(["awaiting_deposit", "processing"]),
+                        SwapOrder.status.in_(
+                            [
+                                "awaiting_deposit",
+                                "processing",
+                                "deposit_detected",
+                                "provider_processing",
+                            ]
+                        ),
                     )
                     .order_by(SwapOrder.id.asc())
                 )
@@ -414,15 +416,6 @@ class SwapOrderProcessor:
         if await self._maybe_handle_signet_demo(session, wallet, order, event_txid):
             return
 
-        order.status = "processing"
-        await log_swap_step(
-            session,
-            order.id,
-            "_try_payout_order.start",
-            "starting payout attempt",
-            {"deposit_btc_address": order.deposit_btc_address},
-        )
-
         try:
             unspent = await self._rpc.call(
                 "listunspent",
@@ -430,7 +423,6 @@ class SwapOrderProcessor:
                 wallet=wallet,
             )
         except Exception as exc:
-            order.status = "awaiting_deposit"
             order.last_error = f"listunspent failed: {exc}"
             await log_swap_step(
                 session,
@@ -442,7 +434,6 @@ class SwapOrderProcessor:
             return
 
         if not isinstance(unspent, list):
-            order.status = "awaiting_deposit"
             order.last_error = "listunspent invalid response"
             await log_swap_step(
                 session,
@@ -471,13 +462,25 @@ class SwapOrderProcessor:
             utxos.append({"txid": txid, "vout": vout})
             total_sats += sats
 
-        if order.provider == "bitrefill":
-            if not await _ensure_bitrefill_invoice(session, order):
-                return
+        if total_sats <= 0:
+            order.status = "awaiting_deposit"
+            order.actual_deposit_sats = 0
+            order.last_error = None
+            return
+
+        order.actual_deposit_sats = total_sats
+        if order.status in {"awaiting_deposit", "processing"}:
+            order.status = "deposit_detected"
+            await log_swap_step(
+                session,
+                order.id,
+                "_try_payout_order.deposit_detected",
+                "deposit detected on order address",
+                {"total_sats": total_sats, "event_txid": event_txid},
+            )
 
         if total_sats < int(order.required_deposit_sats):
-            order.status = "awaiting_deposit"
-            order.actual_deposit_sats = total_sats
+            order.status = "deposit_detected"
             order.last_error = (
                 f"underpaid: got {total_sats} sats, need {int(order.required_deposit_sats)} sats"
             )
@@ -525,7 +528,7 @@ class SwapOrderProcessor:
         dynamic_required = int(order.output_sats) + dynamic_fee
         if total_sats < dynamic_required:
             missing = dynamic_required - total_sats
-            order.status = "awaiting_deposit"
+            order.status = "deposit_detected"
             order.last_error = (
                 f"underpaid for current inputs: got {total_sats} sats, "
                 f"need {dynamic_required} sats (missing {missing})"
@@ -544,6 +547,20 @@ class SwapOrderProcessor:
                 },
             )
             return
+
+        order.status = "provider_processing"
+        order.last_error = None
+        await log_swap_step(
+            session,
+            order.id,
+            "_try_payout_order.start",
+            "starting provider/payout processing after deposit detection",
+            {"deposit_btc_address": order.deposit_btc_address, "total_sats": total_sats},
+        )
+
+        if order.provider == "bitrefill":
+            if not await _ensure_bitrefill_invoice(session, order):
+                return
 
         # Política de tesouraria: troco sempre para o endereço fixo índice 0.
         try:
@@ -632,7 +649,7 @@ class SwapOrderProcessor:
             # Se a soma dos inputs pré-selecionados não cobre output+fee, tratamos como
             # "aguardando complemento" em vez de erro terminal.
             if "RPC error -4" in msg and "preselected coins total amount does not cover" in msg:
-                order.status = "awaiting_deposit"
+                order.status = "deposit_detected"
                 order.last_error = (
                     "insufficient deposit for target output+fee; send a small top-up to deposit address"
                 )
@@ -658,7 +675,7 @@ class SwapOrderProcessor:
         order.payout_txid = str(payout_txid)
         # Para ordens Boltz, salvar o txid do depósito do cliente e marcar status intermediário.
         if order.provider == "boltz":
-            order.status = "deposit_detected"
+            order.status = "provider_processing"
             # Salva o deposit_tx_id (cliente → nós) no registo Boltz.
             if event_txid:
                 from sqlalchemy import select as _select

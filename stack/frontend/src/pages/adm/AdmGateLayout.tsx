@@ -63,6 +63,7 @@ export function AdmGateLayout() {
         navConsole={t.admNavConsole}
         navNode={t.admNavNode}
         navSwaps={t.admNavSwaps}
+        navFundsRescue={t.admNavFundsRescue}
         navPublic={t.admNavPublic}
         logoutLabel={t.admLogout}
         onLogout={() => void handleLogout()}

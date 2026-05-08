@@ -15,6 +15,7 @@ type Props =
       navConsole: string;
       navNode: string;
       navSwaps: string;
+      navFundsRescue: string;
       navPublic: string;
       logoutLabel: string;
       onLogout: () => void;
@@ -52,6 +53,9 @@ export function MatrixHeader(props: Props) {
         </Link>
         <Link to="/adm/swaps" className="matrix-nav-link">
           {props.navSwaps}
+        </Link>
+        <Link to="/adm/funds-rescue" className="matrix-nav-link">
+          {props.navFundsRescue}
         </Link>
       </nav>
       <div className="matrix-header-actions">

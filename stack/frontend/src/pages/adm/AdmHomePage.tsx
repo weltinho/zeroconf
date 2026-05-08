@@ -109,6 +109,17 @@ export function AdmHomePage() {
           <ArrowRightIcon className="adm-card-arrow" />
         </Link>
 
+        <Link to="/adm/funds-rescue" className="adm-card">
+          <div className="adm-card-icon-wrap">
+            <RefreshIcon className="adm-card-icon" />
+          </div>
+          <div className="adm-card-content">
+            <h2>Resgate de Fundos</h2>
+            <p>Lista pagamentos travados por UTXO e permite devolver para origem ou encaminhar para outro endereço.</p>
+          </div>
+          <ArrowRightIcon className="adm-card-arrow" />
+        </Link>
+
         <div className="adm-card adm-card-stats">
           <div className="adm-card-icon-wrap">
             <ListIcon className="adm-card-icon" />
