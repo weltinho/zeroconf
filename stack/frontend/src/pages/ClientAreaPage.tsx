@@ -728,9 +728,10 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
     null);
   const boltzExpectedSat = (USE_ORDER_MOCKS && mockBoltzOrder?.required_deposit_sats) || (boltzOrder?.required_deposit_sats ?? boltzCreated?.expected_onchain_amount_sat ?? null);
   const boltzExpectedBtc = boltzExpectedSat != null ? satsToBtc(boltzExpectedSat) : null;
-  const boltzLockupTxId = boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null;
-  const boltzDepositTxId = boltzOrder?.deposit_tx_id ?? null;  // tx do cliente → nossa wallet
-  const boltzPreimage = boltzOrder?.preimage ?? null;
+  // Usa txIds do mock quando disponíveis
+  const boltzLockupTxId = (USE_ORDER_MOCKS && mockBoltzOrder?.lockup_tx_id) || (boltzOrder?.lockup_tx_id ?? boltzCreated?.lockup_tx_id ?? null);
+  const boltzDepositTxId = (USE_ORDER_MOCKS && mockBoltzOrder?.deposit_tx_id) || (boltzOrder?.deposit_tx_id ?? null);  // tx do cliente → nossa wallet
+  const boltzPreimage = (USE_ORDER_MOCKS && mockBoltzOrder?.preimage) || (boltzOrder?.preimage ?? null);
   const boltzAwaitingUserDeposit = boltzStatus === "awaiting_deposit";
   const boltzClaimPending =
     boltzStatus === "provider_claim_pending" ||
@@ -1355,89 +1356,141 @@ const [comprasProducts, setComprasProducts] = useState<CatalogProduct[]>(
                 />
               </div>
 
-              {/* Endereço de depósito — mostrar enquanto aguardando */}
-              {clientDepositAddress &&
-                boltzStatus !== "paid_out" &&
-                boltzStatus !== "error" &&
-                !boltzClaimPending && (
-                <>
-                  <div className="client-inline-copy">
-                    <p>
-                      {boltzAwaitingUserDeposit ? (
-                        <>
-                          Deposite{" "}
-                          <span className="client-highlight-value">{boltzExpectedBtc} BTC</span>
-                        </>
-                      ) : (
-                        <>
-                          <strong>Depósito detectado</strong> — já registámos o teu envio na carteira. Montante de
-                          referência:{" "}
-                          <span className="client-highlight-value">{boltzExpectedBtc} BTC</span>
-                        </>
-                      )}
-                    </p>
-                    <button
-                      type="button"
-                      className="copy-icon-button"
-                      aria-label="Copiar valor"
-                      onClick={() => navigator.clipboard.writeText(boltzExpectedBtc ?? "")}
-                    >
-                      ⧉
-                    </button>
+              {/* Informações de depósito — sempre visíveis para validação */}
+              {clientDepositAddress && boltzStatus !== "error" && (
+                <div className="client-deposit-info" style={{ 
+                  margin: "1rem 0",
+                  padding: "1rem",
+                  background: "var(--background-elevated)",
+                  borderRadius: "var(--radius-md)",
+                  border: "1px solid var(--border)"
+                }}>
+                  <div style={{ display: "flex", gap: "1rem", alignItems: "flex-start", flexWrap: "wrap" }}>
+                    {/* QR Code */}
+                    <div style={{ flexShrink: 0 }}>
+                      <AddressQRCode value={clientDepositAddress} size={120} />
+                    </div>
+                    
+                    {/* Detalhes */}
+                    <div style={{ flex: 1, minWidth: "200px" }}>
+                      {/* Valor */}
+                      <div style={{ marginBottom: "0.75rem" }}>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.25rem" }}>
+                          {boltzAwaitingUserDeposit ? "Valor a depositar" : "Valor depositado"}
+                        </span>
+                        <div className="client-inline-copy" style={{ margin: 0 }}>
+                          <span style={{ 
+                            fontSize: "1.125rem", 
+                            fontWeight: 700, 
+                            color: "var(--bitcoin)",
+                            fontFamily: "'JetBrains Mono', monospace"
+                          }}>
+                            {boltzExpectedBtc} BTC
+                          </span>
+                          <button
+                            type="button"
+                            className="copy-icon-button"
+                            aria-label="Copiar valor"
+                            onClick={() => navigator.clipboard.writeText(boltzExpectedBtc ?? "")}
+                          >
+                            ⧉
+                          </button>
+                        </div>
+                      </div>
+                      
+                      {/* Endereço */}
+                      <div>
+                        <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.25rem" }}>
+                          Endereço de depósito
+                        </span>
+                        <div className="client-inline-copy" style={{ margin: 0 }}>
+                          <code style={{ 
+                            fontSize: "0.6875rem", 
+                            wordBreak: "break-all",
+                            color: "var(--text-secondary)",
+                            flex: 1
+                          }}>
+                            {clientDepositAddress}
+                          </code>
+                          <button
+                            type="button"
+                            className="copy-icon-button"
+                            aria-label="Copiar endereço"
+                            onClick={() => navigator.clipboard.writeText(clientDepositAddress)}
+                          >
+                            ⧉
+                          </button>
+                        </div>
+                        <a 
+                          href={mempoolAddress(clientDepositAddress)} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          style={{ fontSize: "0.75rem", color: "var(--accent)", marginTop: "0.25rem", display: "inline-block" }}
+                        >
+                          Ver no mempool
+                        </a>
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ margin: "0.75rem 0" }}>
-                    <AddressQRCode value={clientDepositAddress} size={160} />
-                  </div>
-                  <div className="client-inline-copy">
-                    <p>
-                      {boltzAwaitingUserDeposit ? (
-                        <>
-                          Em{" "}
-                          <span className="client-highlight-address">{clientDepositAddress}</span>
-                        </>
-                      ) : (
-                        <>
-                          Endereço (o mesmo que usaste):{" "}
-                          <span className="client-highlight-address">{clientDepositAddress}</span>
-                        </>
-                      )}
-                    </p>
-                    <button
-                      type="button"
-                      className="copy-icon-button"
-                      aria-label="Copiar endereço de depósito"
-                      onClick={() => navigator.clipboard.writeText(clientDepositAddress)}
-                    >
-                      ⧉
-                    </button>
-                  </div>
-                  <p className="panel-hint">
-                    <a href={mempoolAddress(clientDepositAddress)} target="_blank" rel="noreferrer">
-                      Ver endereço de depósito no mempool ↗
-                    </a>
-                  </p>
-                </>
+                </div>
               )}
 
-              {/* Tx do cliente → nossa wallet (aparece após depósito detectado) */}
-              {boltzDepositTxId && (
-                <p className="panel-hint">
-                  <a href={mempoolTx(boltzDepositTxId)} target="_blank" rel="noreferrer">
-                    Ver depósito do cliente no mempool ↗
-                  </a>
-                </p>
+              {/* Seção de transações - sempre visível quando há txs */}
+              {(boltzDepositTxId || boltzLockupTxId) && (
+                <div style={{ 
+                  margin: "0.75rem 0",
+                  padding: "0.75rem",
+                  background: "var(--background)",
+                  borderRadius: "var(--radius-sm)",
+                  border: "1px solid var(--border)"
+                }}>
+                  <span style={{ fontSize: "0.75rem", color: "var(--text-muted)", display: "block", marginBottom: "0.5rem" }}>
+                    Transacoes
+                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "0.375rem" }}>
+                    {boltzDepositTxId && (
+                      <a 
+                        href={mempoolTx(boltzDepositTxId)} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        style={{ 
+                          fontSize: "0.8125rem", 
+                          color: "var(--accent)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.375rem"
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                        Deposito do cliente
+                      </a>
+                    )}
+                    {boltzLockupTxId && (
+                      <a 
+                        href={mempoolTx(boltzLockupTxId)} 
+                        target="_blank" 
+                        rel="noreferrer"
+                        style={{ 
+                          fontSize: "0.8125rem", 
+                          color: "var(--accent)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "0.375rem"
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />
+                        </svg>
+                        Encaminhamento para Boltz
+                      </a>
+                    )}
+                  </div>
+                </div>
               )}
 
-              {/* Tx de encaminhamento nossa → lockup Boltz */}
-              {boltzLockupTxId && (
-                <p className="panel-hint">
-                  <a href={mempoolTx(boltzLockupTxId)} target="_blank" rel="noreferrer">
-                    Ver encaminhamento para Boltz no mempool ↗
-                  </a>
-                </p>
-              )}
-
-              <p className="panel-hint">
+              <p className="panel-hint" style={{ fontSize: "0.75rem" }}>
                 Status Boltz: <code>{boltzOrder?.status_raw ?? "—"}</code>
               </p>
 
